@@ -1,0 +1,32 @@
+name: ChromeAIAgent Java/JNI contract
+on:
+  pull_request:
+    paths:
+      - 'java-agent/**'
+      - 'docs/M3_JAVA_AGENT_PORT.md'
+      - '.github/workflows/java-agent-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  java-jni:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: java-agent/pom.xml
+      - name: Static diff and shell syntax
+        run: |
+          git diff --check HEAD~1..HEAD
+          sh -n java-agent/scripts/verify.sh
+      - name: Java compiler, JNI compiler, tests and native parity
+        run: sh java-agent/scripts/verify.sh
+      - name: Maven jar packaging
+        run: mvn -B -ntp -f java-agent/pom.xml package
