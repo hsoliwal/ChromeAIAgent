@@ -175,6 +175,7 @@ class WebMcpPageToolAdapter {
     if (descriptor.name !== name || descriptor.origin !== expectedOrigin ||
         !descriptor.inputSchema || !schemaValidation) throw new Error('unsupported_tool_schema');
     schemaValidation.validateSchemaValue(JSON.parse(inputJson), descriptor.inputSchema);
+    if (descriptor.outputSchema) schemaValidation.validateSchemaDefinition(descriptor.outputSchema);
     await this.checkTab(tabId, expectedOrigin);
     if ((await this.authorize({ kind: 'execute', tabId, origin: expectedOrigin, name,
       signature, inputJson })) !== true) {
