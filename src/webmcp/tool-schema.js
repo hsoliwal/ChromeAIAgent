@@ -10,7 +10,54 @@ const TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolea
 const MAX_NODES = 256;
 const MAX_DEPTH = 16;
 
+function validateSchemaDefinition(schema) {
+  let count = 0;
+  function inspect(node, depth) {
+    if (++count > MAX_NODES || depth > MAX_DEPTH || !node ||
+        typeof node !== 'object' || Array.isArray(node)) throw new Error('unsupported_schema');
+    for (const keyword of Object.keys(node)) {
+      if (!KEYWORDS.has(keyword)) throw new Error('unsupported_schema_keyword');
+    }
+    if (!TYPES.has(node.type)) throw new Error('unsupported_schema_type');
+    if (node.properties !== undefined) {
+      if (node.type !== 'object' || !node.properties ||
+          typeof node.properties !== 'object' || Array.isArray(node.properties)) {
+        throw new Error('unsupported_schema');
+      }
+      for (const child of Object.values(node.properties)) inspect(child, depth + 1);
+    }
+    if (node.items !== undefined) {
+      if (node.type !== 'array') throw new Error('unsupported_schema');
+      inspect(node.items, depth + 1);
+    }
+    if (node.required !== undefined && (node.type !== 'object' ||
+        !Array.isArray(node.required) || node.required.length > 64 ||
+        node.required.some(key => typeof key !== 'string'))) throw new Error('unsupported_schema');
+    if (node.additionalProperties !== undefined &&
+        (node.type !== 'object' || typeof node.additionalProperties !== 'boolean')) {
+      throw new Error('unsupported_schema');
+    }
+    for (const field of ['minLength', 'maxLength', 'minItems', 'maxItems']) {
+      if (node[field] !== undefined && (!Number.isSafeInteger(node[field]) || node[field] < 0)) {
+        throw new Error('unsupported_schema');
+      }
+    }
+    for (const field of ['minimum', 'maximum']) {
+      if (node[field] !== undefined &&
+          (typeof node[field] !== 'number' || !Number.isFinite(node[field]))) {
+        throw new Error('unsupported_schema');
+      }
+    }
+    if (node.enum !== undefined && (!Array.isArray(node.enum) || node.enum.length > 32)) {
+      throw new Error('unsupported_schema');
+    }
+  }
+  inspect(schema, 0);
+  return true;
+}
+
 function validateSchemaValue(value, schema) {
+  validateSchemaDefinition(schema);
   let visited = 0;
   function check(v, s, depth) {
     if (++visited > MAX_NODES || depth > MAX_DEPTH || !s || typeof s !== 'object' ||
@@ -91,6 +138,6 @@ function validateSchemaValue(value, schema) {
   return true;
 }
 
-const exported = { validateSchemaValue };
+const exported = { validateSchemaValue, validateSchemaDefinition };
 if (typeof module !== 'undefined' && module.exports) module.exports = exported;
 else globalThis.WebMcpSchema = exported;
