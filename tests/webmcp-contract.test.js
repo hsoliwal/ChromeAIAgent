@@ -138,7 +138,7 @@ test('JSON Schema subset enforces required and disallows unknown keywords', asyn
   assert.deepEqual(JSON.parse(output), { ok: true });
 });
 
-test('unsupported output schema fails closed after untrusted page output', async () => {
+test('unsupported output schema is rejected before any page execution', async () => {
   const run = fixture({ tools: [{ name: 'status', origin: 'https://example.org', description: 'Status',
     inputSchema: { type: 'object' }, outputSchema: { type: 'object',
       properties: { result: { anyOf: [{ type: 'string' }] } } } }],
@@ -146,6 +146,7 @@ test('unsupported output schema fails closed after untrusted page output', async
   const [tool] = await run.adapter.discover({ tabId: 1, expectedOrigin: 'https://example.org' });
   await assert.rejects(run.adapter.execute({ tabId: 1, expectedOrigin: 'https://example.org',
     name: tool.name, signature: tool.signature, documentId: tool.documentId }), /unsupported_schema_keyword/);
+  assert.equal(run.state.executed, 0);
 });
 
 test('same-origin navigation invalidates the discovered document ID', async () => {
