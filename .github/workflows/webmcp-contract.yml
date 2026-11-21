@@ -1,0 +1,23 @@
+name: WebMCP optional adapter contracts
+on:
+  pull_request:
+    paths:
+      - 'src/webmcp/**'
+      - 'tests/webmcp-contract.test.js'
+      - '.github/workflows/webmcp-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check src/webmcp/page-tool-adapter.js
+      - run: node --check src/webmcp/tool-schema.js
+      - run: node --test tests/webmcp-contract.test.js
