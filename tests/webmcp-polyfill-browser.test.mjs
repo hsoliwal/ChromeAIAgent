@@ -127,3 +127,47 @@ test('extension page functions interoperate with actual polyfill descriptors', a
     assert.deepEqual(JSON.parse(result.outputJson), { title: 'WebMCP browser fixture' });
   } finally { await page.close(); }
 });
+
+
+test('same-origin iframe tool is visible in WebMCP but denied by top-frame adapter', async () => {
+  const page = await pageWithPolyfill();
+  try {
+    await page.addScriptTag({ path: adapterPath });
+    await page.evaluate(() => {
+      const iframe = document.createElement('iframe');
+      iframe.id = 'same-origin-child';
+      iframe.src = '/child';
+      document.body.appendChild(iframe);
+    });
+    await page.waitForFunction(() => {
+      const frame = document.querySelector('#same-origin-child');
+      return frame?.contentDocument?.readyState === 'complete';
+    });
+    const child = page.frames().find(frame => frame !== page.mainFrame());
+    assert.ok(child, 'same-origin iframe should be attached');
+    await child.addScriptTag({ path: polyfill });
+    await child.evaluate(async () => {
+      await document.modelContext.registerTool({ name: 'fixture.iframe_read',
+        description: 'Read from a child frame', inputSchema: { type: 'object' },
+        execute() { return { child: true }; } });
+    });
+    const result = await page.evaluate(async () => {
+      const origin = location.origin;
+      const all = await document.modelContext.getTools();
+      const iframeTool = all.find(tool => tool.name === 'fixture.iframe_read');
+      const candidate = await pageDiscover(origin);
+      const signature = JSON.stringify({ name: 'fixture.iframe_read', origin,
+        description: 'Read from a child frame', inputSchema: { type: 'object' },
+        outputSchema: null });
+      const unauthorized = await pageExecute(origin, 'fixture.iframe_read', signature, '{}', 2000);
+      return { webMcpSeesChild: !!iframeTool,
+        ownerIsChild: iframeTool?.window === document.querySelector('iframe').contentWindow,
+        adapterSeesChild: candidate.tools?.some(tool => tool.name === 'fixture.iframe_read'),
+        denied: unauthorized.error };
+    });
+    assert.equal(result.webMcpSeesChild, true);
+    assert.equal(result.ownerIsChild, true);
+    assert.equal(result.adapterSeesChild, false);
+    assert.equal(result.denied, 'tool_not_unique');
+  } finally { await page.close(); }
+});
