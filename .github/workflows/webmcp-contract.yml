@@ -4,6 +4,7 @@ on:
     paths:
       - 'src/webmcp/**'
       - 'tests/webmcp-contract.test.js'
+      - 'tests/webmcp-polyfill-browser.test.mjs'
       - '.github/workflows/webmcp-contract.yml'
   workflow_dispatch:
 permissions:
@@ -21,3 +22,22 @@ jobs:
       - run: node --check src/webmcp/page-tool-adapter.js
       - run: node --check src/webmcp/tool-schema.js
       - run: node --test tests/webmcp-contract.test.js
+
+  official-polyfill-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned upstream polyfill and Chromium test harness
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @w3c/webmcp-polyfill@0.1.1 playwright@1.55.0
+      - name: Provision Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify exact versions
+        run: npm ls @w3c/webmcp-polyfill playwright --depth=0
+      - name: Real secure-localhost browser integration
+        run: node --test tests/webmcp-polyfill-browser.test.mjs
