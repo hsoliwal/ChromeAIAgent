@@ -44,3 +44,36 @@ jobs:
         run: node --test tests/webmcp-polyfill-browser.test.mjs
       - name: Real isolated Chrome MV3 injection and document identity
         run: node --test tests/webmcp-mv3-browser.test.mjs
+
+  teavm-real-jso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact reviewed TeaVM PR head
+        uses: actions/checkout@v4
+        with:
+          repository: hsoliwal/teavm
+          ref: 2a8a80fcf71ce36db092a89e223fbc77cc5ef0a0
+          path: teavm
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify pinned TeaVM source identity
+        run: |
+          test "$(git rev-parse HEAD)" = "2a8a80fcf71ce36db092a89e223fbc77cc5ef0a0"
+        working-directory: teavm
+      - name: Compile actual TeaVM JSO overlays and Checkstyle
+        run: ./gradlew --no-daemon --console=plain :jso:apis:compileJava :jso:apis:checkstyleMain
+        working-directory: teavm
+      - name: Publish forked TeaVM compiler artifacts for independent sample project
+        run: ./gradlew --no-daemon --console=plain publishToMavenLocal -x test
+        working-directory: teavm
+      - name: Generate WebMCP JavaScript fixture and WAR
+        run: ./gradlew --no-daemon --console=plain :webmcp:generateJavaScript :webmcp:war
+        working-directory: teavm/samples
+      - name: Verify non-empty WebMCP JavaScript assets
+        run: |
+          test -n "$(find teavm/samples/webmcp/build -type f -name '*.js' -print -quit)"
