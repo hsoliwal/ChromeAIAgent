@@ -62,6 +62,7 @@ before(async () => {
   origin = `http://127.0.0.1:${server.address().port}`;
   context = await chromium.launchPersistentContext(join(extensionRoot, 'profile'), {
     headless: true,
+    channel: 'chromium', // full Chromium, not the extension-incompatible headless shell
     args: [
       `--disable-extensions-except=${extensionRoot}`,
       `--load-extension=${extensionRoot}`,
