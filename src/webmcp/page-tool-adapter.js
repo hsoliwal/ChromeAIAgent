@@ -39,6 +39,9 @@ async function pageDiscover(expectedOrigin) {
     const result = [];
     for (const tool of tools) {
       if (!tool || tool.origin !== expectedOrigin) continue;
+      // Native draft exposes source; polyfill 0.1.1 exposes window instead.
+      // Same-origin iframe tools are NOT page-owned top-frame tools.
+      if ((tool.source ?? tool.window) !== globalThis) continue;
       if (typeof tool.name !== 'string' || !/^[\w.-]{1,128}$/.test(tool.name) ||
           typeof tool.description !== 'string') return { ok: false, error: 'invalid_tool' };
       // Tool identity stays in the page; signature is a change detector, not an ID.
@@ -75,7 +78,8 @@ async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs
     if (!Array.isArray(tools) || tools.length > 64) {
       return { ok: false, error: 'tool_limit_exceeded' };
     }
-    const matches = tools.filter(tool => tool && tool.origin === expectedOrigin && tool.name === name);
+    const matches = tools.filter(tool => tool && tool.origin === expectedOrigin &&
+      (tool.source ?? tool.window) === globalThis && tool.name === name);
     if (matches.length !== 1) return { ok: false, error: 'tool_not_unique' };
     const tool = matches[0];
     const current = JSON.stringify({ name: tool.name, origin: tool.origin,

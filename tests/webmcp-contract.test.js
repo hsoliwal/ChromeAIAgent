@@ -22,9 +22,9 @@ function fixture({ authorize = () => true, tools, execute, origin = 'https://exa
       global.location = { origin };
       global.isSecureContext = true;
       global.document = { modelContext: {
-        getTools: async () => tools ?? [{ name: 'title', origin,
+        getTools: async () => (tools ?? [{ name: 'title', origin,
           description: 'Read the title', inputSchema: { type: 'object' },
-          annotations: { readOnlyHint: true } }],
+          annotations: { readOnlyHint: true } }]).map(tool => ({ window: globalThis, ...tool })),
         executeTool: async (...arguments_) => { state.executed++; return execute
           ? execute(...arguments_) : JSON.stringify({ title: 'Hello' }); }
       } };
@@ -252,4 +252,27 @@ test('invalid JSON output is rejected even without a declared output schema', as
     name: tool.name, signature: tool.signature, documentId: tool.documentId }),
   /invalid_json_output/);
   assert.equal(run.state.executed, 1);
+});
+
+test('same-origin iframe-owned tools are excluded even though the origin matches', async () => {
+  const foreignWindow = { unrelated: true };
+  const run = fixture({ tools: [{ name: 'child', origin: 'https://example.org',
+    description: 'Child frame', inputSchema: { type: 'object' }, window: foreignWindow }] });
+  const list = await run.adapter.discover({ tabId: 2, expectedOrigin: 'https://example.org' });
+  assert.deepEqual(list, []);
+  // Even a forged metadata signature cannot execute a child-frame tool.
+  const signature = JSON.stringify({ name: 'child', origin: 'https://example.org',
+    description: 'Child frame', inputSchema: { type: 'object' }, outputSchema: null });
+  await assert.rejects(run.adapter.execute({ tabId: 2, expectedOrigin: 'https://example.org',
+    name: 'child', documentId: 'doc-1', signature, input: {} }), /tool_not_unique/);
+  assert.equal(run.state.executed, 0);
+});
+
+test('native-style Tool.source is used before polyfill window fallback', async () => {
+  const run = fixture({ tools: [{ name: 'native', origin: 'https://example.org',
+    description: 'Native tool', inputSchema: { type: 'object' },
+    window: { wrong: true }, source: globalThis }] });
+  const tools = await run.adapter.discover({ tabId: 2, expectedOrigin: 'https://example.org' });
+  assert.equal(tools.length, 1);
+  assert.equal(tools[0].name, 'native');
 });
