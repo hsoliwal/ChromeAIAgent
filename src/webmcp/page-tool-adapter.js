@@ -87,9 +87,18 @@ async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs
       return { ok: false, error: 'invalid_arguments' };
     }
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), timeoutMs);
+    let deadline;
+    const expired = new Promise((_, reject) => {
+      deadline = setTimeout(() => {
+        controller.abort();
+        reject(new Error('deadline_exceeded'));
+      }, timeoutMs);
+    });
     try {
-      const outputJson = await context.executeTool(tool, input, { signal: controller.signal });
+      // Never trust a page callback to settle its promise after cancellation.
+      const outputJson = await Promise.race([
+        context.executeTool(tool, input, { signal: controller.signal }), expired
+      ]);
       if (controller.signal.aborted) return { ok: false, error: 'deadline_exceeded' };
       if (typeof outputJson !== 'string') return { ok: false, error: 'incompatible_result_version' };
       if (new TextEncoder().encode(outputJson).length > 262144) {
@@ -124,12 +133,27 @@ class WebMcpPageToolAdapter {
     if (secureOrigin(tab?.url) !== expectedOrigin) throw new Error('tab_origin_changed');
   }
 
-  async runScript(tabId, func, args, expectedOrigin, expectedDocumentId = null) {
+  async runScript(tabId, func, args, expectedOrigin, expectedDocumentId = null,
+      maxWaitMs = 3500) {
+    if (!Number.isSafeInteger(maxWaitMs) || maxWaitMs < 1 || maxWaitMs > 15000) {
+      throw new Error('invalid_injection_budget');
+    }
     const target = { tabId, allFrames: false };
     if (expectedDocumentId !== null) target.documentIds = [expectedDocumentId];
-    const responses = await this.chrome.scripting.executeScript({
-      target, world: 'MAIN', func, args
-    });
+    let timer;
+    let responses;
+    try {
+      responses = await Promise.race([
+        this.chrome.scripting.executeScript({ target, world: 'MAIN', func, args }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('injection_deadline_exceeded')), maxWaitMs);
+        })
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    // A service-worker timeout is not a rollback of the page callback.
+    // Never silently retry the same tool after this deadline.
     // Check navigation after injection and never return data from a replaced tab.
     await this.checkTab(tabId, expectedOrigin);
     if (!Array.isArray(responses) || responses.length !== 1 ||
@@ -182,15 +206,18 @@ class WebMcpPageToolAdapter {
       throw new Error('extension_permission_denied');
     }
     const result = await this.runScript(tabId, pageExecute,
-      [expectedOrigin, name, signature, inputJson, timeoutMs], expectedOrigin, documentId);
+      [expectedOrigin, name, signature, inputJson, timeoutMs], expectedOrigin,
+      documentId, Math.min(timeoutMs + 1500, 15000));
     if (typeof result.outputJson !== 'string' ||
         BufferOrTextBytes(result.outputJson) > MAX_RESULT_BYTES) {
       throw new Error('invalid_result');
     }
+    // A missing outputSchema does not make arbitrary text a valid WebMCP result.
+    // Reject malformed JSON even for tools with no declared output constraints.
+    let output;
+    try { output = JSON.parse(result.outputJson); }
+    catch { throw new Error('invalid_json_output'); }
     if (descriptor.outputSchema) {
-      let output;
-      try { output = JSON.parse(result.outputJson); }
-      catch { throw new Error('invalid_json_output'); }
       schemaValidation.validateSchemaValue(output, descriptor.outputSchema);
     }
     return result.outputJson;

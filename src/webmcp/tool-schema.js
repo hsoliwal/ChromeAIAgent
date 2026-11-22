@@ -11,45 +11,74 @@ const MAX_NODES = 256;
 const MAX_DEPTH = 16;
 
 function validateSchemaDefinition(schema) {
-  let count = 0;
+  let nodes = 0;
+  const requireBound = (value) => Number.isSafeInteger(value) && value >= 0;
   function inspect(node, depth) {
-    if (++count > MAX_NODES || depth > MAX_DEPTH || !node ||
+    if (++nodes > MAX_NODES || depth > MAX_DEPTH || node === null ||
         typeof node !== 'object' || Array.isArray(node)) throw new Error('unsupported_schema');
     for (const keyword of Object.keys(node)) {
       if (!KEYWORDS.has(keyword)) throw new Error('unsupported_schema_keyword');
     }
     if (!TYPES.has(node.type)) throw new Error('unsupported_schema_type');
+    for (const key of ['title', 'description']) {
+      if (node[key] !== undefined && typeof node[key] !== 'string') {
+        throw new Error('unsupported_schema_metadata');
+      }
+    }
+    // Only the deliberately implemented keyword/type combinations are accepted.
+    // Ignoring a schema constraint would be less safe than refusing the tool.
+    const typeKeywords = {
+      object: ['properties', 'required', 'additionalProperties'],
+      array: ['items', 'minItems', 'maxItems'],
+      string: ['minLength', 'maxLength'],
+      number: ['minimum', 'maximum'],
+      integer: ['minimum', 'maximum']
+    };
+    for (const key of ['properties', 'required', 'additionalProperties',
+      'items', 'minItems', 'maxItems', 'minLength', 'maxLength', 'minimum', 'maximum']) {
+      if (node[key] !== undefined && !(typeKeywords[node.type] || []).includes(key)) {
+        throw new Error('unsupported_schema_keyword_type');
+      }
+    }
     if (node.properties !== undefined) {
-      if (node.type !== 'object' || !node.properties ||
-          typeof node.properties !== 'object' || Array.isArray(node.properties)) {
+      if (node.properties === null || typeof node.properties !== 'object' ||
+          Array.isArray(node.properties) || Object.keys(node.properties).length > 64) {
         throw new Error('unsupported_schema');
       }
-      for (const child of Object.values(node.properties)) inspect(child, depth + 1);
+      for (const [key, child] of Object.entries(node.properties)) {
+        if (key.length > 128) throw new Error('unsupported_schema');
+        inspect(child, depth + 1);
+      }
     }
-    if (node.items !== undefined) {
-      if (node.type !== 'array') throw new Error('unsupported_schema');
-      inspect(node.items, depth + 1);
+    if (node.items !== undefined) inspect(node.items, depth + 1);
+    if (node.required !== undefined) {
+      if (!Array.isArray(node.required) || node.required.length > 64 ||
+          node.required.some(key => typeof key !== 'string' || key.length > 128) ||
+          new Set(node.required).size !== node.required.length) throw new Error('unsupported_schema');
     }
-    if (node.required !== undefined && (node.type !== 'object' ||
-        !Array.isArray(node.required) || node.required.length > 64 ||
-        node.required.some(key => typeof key !== 'string'))) throw new Error('unsupported_schema');
-    if (node.additionalProperties !== undefined &&
-        (node.type !== 'object' || typeof node.additionalProperties !== 'boolean')) {
+    if (node.additionalProperties !== undefined && typeof node.additionalProperties !== 'boolean') {
       throw new Error('unsupported_schema');
     }
-    for (const field of ['minLength', 'maxLength', 'minItems', 'maxItems']) {
-      if (node[field] !== undefined && (!Number.isSafeInteger(node[field]) || node[field] < 0)) {
+    for (const name of ['minLength', 'maxLength', 'minItems', 'maxItems']) {
+      if (node[name] !== undefined && !requireBound(node[name])) throw new Error('unsupported_schema');
+    }
+    for (const name of ['minimum', 'maximum']) {
+      if (node[name] !== undefined &&
+          (typeof node[name] !== 'number' || !Number.isFinite(node[name]))) {
         throw new Error('unsupported_schema');
       }
     }
-    for (const field of ['minimum', 'maximum']) {
-      if (node[field] !== undefined &&
-          (typeof node[field] !== 'number' || !Number.isFinite(node[field]))) {
+    for (const [lo, hi] of [['minLength', 'maxLength'], ['minItems', 'maxItems'],
+      ['minimum', 'maximum']]) {
+      if (node[lo] !== undefined && node[hi] !== undefined && node[lo] > node[hi]) {
         throw new Error('unsupported_schema');
       }
     }
-    if (node.enum !== undefined && (!Array.isArray(node.enum) || node.enum.length > 32)) {
-      throw new Error('unsupported_schema');
+    if (node.enum !== undefined) {
+      if (!Array.isArray(node.enum) || node.enum.length < 1 || node.enum.length > 32 ||
+          node.enum.some(value => {
+            try { return JSON.stringify(value) === undefined; } catch { return true; }
+          })) throw new Error('unsupported_schema');
     }
   }
   inspect(schema, 0);

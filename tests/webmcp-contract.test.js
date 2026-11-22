@@ -159,3 +159,97 @@ test('same-origin navigation invalidates the discovered document ID', async () =
     documentId: tool.documentId, signature: tool.signature }), /document_not_found/);
   assert.equal(run.state.executed, 0);
 });
+
+test('schema definition refuses keywords applied to the wrong JSON type', () => {
+  const { validateSchemaDefinition } = require('../src/webmcp/tool-schema.js');
+  for (const value of [
+    { type: 'object', minimum: 2 },
+    { type: 'boolean', minLength: 1 },
+    { type: 'array', properties: { id: { type: 'string' } } },
+    { type: 'string', minItems: 1 },
+    { type: 'integer', additionalProperties: true },
+    { type: 'object', required: ['x','x'] },
+    { type: 'array', items: { type: 'string', pattern: '[a-z]' } },
+    { type: 'string', minLength: 2, maxLength: 1 }
+  ]) assert.throws(() => validateSchemaDefinition(value), /unsupported_schema/);
+});
+
+test('nested schema is fully checked before invoking a tool', async () => {
+  const run = fixture({ tools: [{ name: 'nested', origin: 'https://example.org',
+    description: 'Nested read', inputSchema: { type: 'object',
+      properties: { value: { type: 'array', items: { type: 'object',
+        properties: { answer: { type: 'string', pattern: '.*' } } } } } } }] });
+  const [tool] = await run.adapter.discover({ tabId: 3, expectedOrigin: 'https://example.org' });
+  await assert.rejects(run.adapter.execute({ tabId: 3, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId,
+    input: { value: [] } }), /unsupported_schema_keyword/);
+  assert.equal(run.state.executed, 0);
+});
+
+test('output validation rejects wrong-keyword constraints before any side effect', async () => {
+  const run = fixture({ tools: [{ name: 'weird', origin: 'https://example.org',
+    description: 'Weird', inputSchema: { type: 'object' },
+    outputSchema: { type: 'object', minLength: 3 } }] });
+  const [tool] = await run.adapter.discover({ tabId: 3, expectedOrigin: 'https://example.org' });
+  await assert.rejects(run.adapter.execute({ tabId: 3, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId }),
+  /unsupported_schema_keyword_type/);
+  assert.equal(run.state.executed, 0);
+});
+
+test('hanging page callback returns a deadline failure even when abort is ignored', async () => {
+  let signal;
+  const run = fixture({ execute: (_tool, _arg, options) => {
+    signal = options.signal;
+    return new Promise(() => {});
+  } });
+  const [tool] = await run.adapter.discover({ tabId: 2, expectedOrigin: 'https://example.org' });
+  const started = Date.now();
+  await assert.rejects(run.adapter.execute({ tabId: 2, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId,
+    timeoutMs: 15 }), /deadline_exceeded/);
+  assert.equal(signal.aborted, true);
+  assert.ok(Date.now() - started < 1000);
+});
+
+test('hanging Chrome script injection is independently bounded', async () => {
+  const chrome = { tabs: { get: async () => ({ url: 'https://example.org/path' }) },
+    scripting: { executeScript: () => new Promise(() => {}) } };
+  const adapter = new WebMcpPageToolAdapter(chrome, () => true);
+  await assert.rejects(adapter.runScript(2, () => 1, [],
+    'https://example.org', null, 15), /injection_deadline_exceeded/);
+});
+
+test('output can be rejected after execution; the side effect is never claimed to roll back', async () => {
+  const run = fixture({ tools: [{ name: 'bad-output', description: 'Bad output',
+    origin: 'https://example.org', inputSchema: { type: 'object' },
+    outputSchema: { type: 'object', additionalProperties: false } }],
+    execute: () => JSON.stringify({ unexpected: 'data' }) });
+  const [tool] = await run.adapter.discover({ tabId: 3, expectedOrigin: 'https://example.org' });
+  await assert.rejects(run.adapter.execute({ tabId: 3, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId }),
+  /schema_extra_property/);
+  assert.equal(run.state.executed, 1);
+});
+
+test('strict numeric and nested array constraints are enforced', () => {
+  const { validateSchemaValue } = require('../src/webmcp/tool-schema.js');
+  const schema = { type: 'object', required: ['ids'], additionalProperties: false,
+    properties: { ids: { type: 'array', minItems: 1, maxItems: 3,
+      items: { type: 'integer', minimum: 0, maximum: 42 } } } };
+  assert.equal(validateSchemaValue({ ids: [0, 3, 42] }, schema), true);
+  assert.throws(() => validateSchemaValue({ ids: [] }, schema), /schema_array_bounds/);
+  assert.throws(() => validateSchemaValue({ ids: [44] }, schema), /schema_number_bounds/);
+  assert.throws(() => validateSchemaValue({ ids: [3.3] }, schema), /schema_type_mismatch/);
+});
+
+
+test('invalid JSON output is rejected even without a declared output schema', async () => {
+  const run = fixture({ execute: () => '{not valid json}' });
+  const [tool] = await run.adapter.discover({ tabId: 4,
+    expectedOrigin: 'https://example.org' });
+  await assert.rejects(run.adapter.execute({ tabId: 4, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId }),
+  /invalid_json_output/);
+  assert.equal(run.state.executed, 1);
+});
