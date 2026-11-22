@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: hsoliwal/teavm
-          ref: 723d7203bdef15cbab0a29560c23a1dffc9fa414
+          ref: ffa9ac6670306155a16c317c29ea497165e3f4ad
           path: teavm
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -63,7 +63,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify pinned TeaVM source identity
         run: |
-          test "$(git rev-parse HEAD)" = "723d7203bdef15cbab0a29560c23a1dffc9fa414"
+          test "$(git rev-parse HEAD)" = "ffa9ac6670306155a16c317c29ea497165e3f4ad"
         working-directory: teavm
       - name: Compile actual TeaVM JSO overlays and Checkstyle
         run: ./gradlew --no-daemon --console=plain :jso:apis:compileJava :jso:apis:checkstyleMain
