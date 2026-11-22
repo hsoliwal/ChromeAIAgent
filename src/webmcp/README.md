@@ -68,3 +68,28 @@ WebMCP WPT/native/polyfill tests at pinned versions.
 
 The repository's MIT license applies to this optional module. Preserve existing
 provenance and do not import polyfill source without an upstream license audit.
+
+## Qualification snapshot (2026-11-22)
+
+This is still an **unwired, default-deny module**, not a production extension feature.
+The extension-only authorization callback must separately approve discovery and
+each execution; a WebMCP page, tool annotation or LLM answer cannot authorize it.
+Top-document ownership is enforced: the draft's `Tool.source` or legacy polyfill's
+`RegisteredTool.window` must identify the executing top page. Same-origin iframe
+tools are deliberately not exposed by this adapter.
+
+- Security contracts: 21/21 local Node checks passing including cancellation,
+  schema refusal, navigation identity, and same-origin iframe exclusion.
+- Official `@w3c/webmcp-polyfill@0.1.1` on Chromium via Playwright:
+  4/4 hosted browser tests passed in Actions run #44986330857 (2026-11-22).
+- An isolated Manifest V3 test extension and an additional real-polyfill iframe
+  test are under separate CI qualification; do not assume their result.
+- An exact SHA-pinned real TeaVM Gradle JSO/JavaScript codegen job is now included
+  in the CI workflow, but its completion is a separate acceptance gate.
+- Native browser WebMCP and complete WPT, browser-agent integration, HTTP
+  Permissions Policy, mixed-origin/mixed-native frames and user confirmation
+  remain unqualified. ChromeLLM continues to have no browser runtime.
+
+Because full JSON Schema is not supported, the adapter rejects unfamiliar
+keywords rather than ignoring them. No tool metadata can establish authority,
+and cancellation cannot undo an operation that the page already performed.
