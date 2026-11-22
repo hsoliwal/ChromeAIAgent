@@ -5,6 +5,7 @@ on:
       - 'src/webmcp/**'
       - 'tests/webmcp-contract.test.js'
       - 'tests/webmcp-polyfill-browser.test.mjs'
+      - 'tests/webmcp-mv3-browser.test.mjs'
       - '.github/workflows/webmcp-contract.yml'
   workflow_dispatch:
 permissions:
@@ -41,3 +42,5 @@ jobs:
         run: npm ls @w3c/webmcp-polyfill playwright --depth=0
       - name: Real secure-localhost browser integration
         run: node --test tests/webmcp-polyfill-browser.test.mjs
+      - name: Real isolated Chrome MV3 injection and document identity
+        run: node --test tests/webmcp-mv3-browser.test.mjs
