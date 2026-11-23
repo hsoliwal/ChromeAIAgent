@@ -21,12 +21,14 @@
   let current = null;
   let prepared = null;
   let busy = false;
+  let reviewEpoch = 0;
 
   function announce(message) { status.textContent = message; }
   function clearOptions(select, message) {
     select.replaceChildren(new Option(message, ''));
   }
   function forget() {
+    reviewEpoch++;
     permission.revoke();
     tools = [];
     current = null;
@@ -39,6 +41,7 @@
     executeButton.disabled = true;
   }
   function invalidateReview() {
+    reviewEpoch++;
     permission.revoke();
     prepared = null;
     preview.textContent = 'Arguments changed; review again before execution.';
@@ -50,6 +53,7 @@
     tabsSelect.disabled = value;
     discoverButton.disabled = value || !current;
     toolSelect.disabled = value;
+    jsonInput.disabled = value;
     reviewButton.disabled = value || tools.length === 0;
     executeButton.disabled = value || !prepared;
   }
@@ -148,7 +152,8 @@
       // The executor repeats these checks just before the authorized execution.
       prepared = { tabId: current.tabId, origin: current.origin,
         documentId: tool.documentId, name: tool.name, signature: tool.signature,
-        inputJson, input };
+        inputJson, input, reviewEpoch, rawInput: jsonInput.value,
+        toolChoice: toolSelect.value };
       preview.textContent = 'Target: ' + current.origin + '\nTool: ' + tool.name +
         '\nExact arguments:\n' + inputJson +
         '\n\nThis page operation may have side effects. Execution is not reversible.' +
@@ -168,6 +173,13 @@
     try {
       // Re-confirm the chosen tab/origin before arming a single exact action.
       const tab = await chrome.tabs.get(action.tabId);
+      // An asynchronous tab query must not turn an invalidated review into
+      // permission. This guards even programmatic changes to the trusted UI.
+      if (reviewEpoch !== action.reviewEpoch ||
+          jsonInput.value !== action.rawInput ||
+          toolSelect.value !== action.toolChoice) {
+        throw new Error('review_invalidated');
+      }
       if (tabOrigin(tab.url) !== action.origin ||
           current.tabId !== action.tabId) throw new Error('Target tab changed.');
       permission.armExecute(action);
