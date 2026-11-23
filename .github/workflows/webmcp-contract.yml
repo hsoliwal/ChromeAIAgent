@@ -1,0 +1,98 @@
+name: WebMCP optional adapter contracts
+on:
+  pull_request:
+    paths:
+      - 'src/webmcp/**'
+      - 'tests/webmcp-contract.test.js'
+      - 'tests/webmcp-polyfill-browser.test.mjs'
+      - 'tests/webmcp-mv3-browser.test.mjs'
+      - '.github/workflows/webmcp-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  node-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check src/webmcp/page-tool-adapter.js
+      - run: node --check src/webmcp/tool-schema.js
+      - run: node --test tests/webmcp-contract.test.js
+
+  official-polyfill-browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned upstream polyfill and Chromium test harness
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @w3c/webmcp-polyfill@0.1.1 playwright@1.55.0
+      - name: Provision Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Verify exact versions
+        run: npm ls @w3c/webmcp-polyfill playwright --depth=0
+      - name: Real secure-localhost browser integration
+        run: node --test tests/webmcp-polyfill-browser.test.mjs
+      - name: Real isolated Chrome MV3 injection and document identity
+        run: node --test tests/webmcp-mv3-browser.test.mjs
+
+  teavm-real-jso:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact reviewed TeaVM PR head
+        uses: actions/checkout@v4
+        with:
+          repository: hsoliwal/teavm
+          ref: ffa9ac6670306155a16c317c29ea497165e3f4ad
+          path: teavm
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify pinned TeaVM source identity
+        run: |
+          test "$(git rev-parse HEAD)" = "ffa9ac6670306155a16c317c29ea497165e3f4ad"
+        working-directory: teavm
+      - name: Compile actual TeaVM JSO overlays and Checkstyle
+        run: ./gradlew --no-daemon --console=plain :jso:apis:compileJava :jso:apis:checkstyleMain
+        working-directory: teavm
+      - name: Publish forked TeaVM compiler artifacts for independent sample project
+        run: ./gradlew --no-daemon --console=plain publishToMavenLocal -x test
+        working-directory: teavm
+      - name: Generate WebMCP JavaScript fixture and WAR
+        run: ./gradlew --no-daemon --console=plain :webmcp:generateJavaScript :webmcp:war
+        working-directory: teavm/samples
+      - name: Verify non-empty WebMCP JavaScript assets
+        run: |
+          test -n "$(find teavm/samples/webmcp/build -type f -name '*.js' -print -quit)"
+      - name: Retain only generated sample WAR for local runtime diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: teavm-webmcp-compiled-war
+          path: teavm/samples/webmcp/build/libs/*.war
+          retention-days: 2
+          if-no-files-found: error
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned polyfill and browser harness for generated Java
+        working-directory: teavm
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @w3c/webmcp-polyfill@0.1.1 playwright@1.55.0
+      - name: Provision Chromium for compiled-Java browser test
+        working-directory: teavm
+        run: npx playwright install --with-deps chromium
+      - name: Execute compiled TeaVM JavaScript against the official WebMCP polyfill
+        working-directory: teavm
+        run: node --test samples/webmcp/src/test/browser/runtime.test.mjs
