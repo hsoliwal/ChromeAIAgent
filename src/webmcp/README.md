@@ -19,13 +19,19 @@ const adapter = new WebMcpPageToolAdapter(chrome, async request => {
 ```
 
 Only invoke `discover({tabId, expectedOrigin})` and then
-`execute({tabId, expectedOrigin, name, signature, documentId, input, timeoutMs})` after
+`execute({tabId, expectedOrigin, name, signature, documentId, input, timeoutMs, deadlineEpochMs})` after
 operator authorization. The `signature` is obtained from discovery; it detects
 metadata changes, but **cannot establish immutable tool identity** across calls.
 The actual execution rediscovers and executes the opaque native/polyfill tool
 object in the **same MAIN-world invocation**. The Chrome 106+ document ID
 from discovery is required for execution; navigation invalidates the call.
 Ambiguous names are rejected.
+
+`deadlineEpochMs` is optional. A reviewed UI may pass the original approval
+deadline as `performance.timeOrigin + performance.now() + remainingMs`;
+delayed tab checks, authorization, injection and rediscovery cannot extend it.
+The adapter caps the deadline by its own `timeoutMs` budget. Existing calls
+that omit the new option retain the same entry point and validation contract.
 
 The tool's `readOnlyHint` is untrusted metadata, not a permission assertion.
 Even apparently read-only tools can have side effects: consequently the caller
@@ -40,8 +46,10 @@ listener, nonce or page-to-extension privilege relay.
 - Any missing WebMCP API is an explicit failure. A polyfill must be installed by
   the owning page beforehand, and native contexts are not replaced.
 - JSON argument objects only, maximum 64 KiB; output maximum 256 KiB; 64 tools;
-  metadata signature maximum 16 KiB. Tool calls have an in-page 1–10 s deadline
-  with a real `AbortSignal`; cancellation requests cannot roll back side effects.
+  metadata signature maximum 16 KiB. Byte limits count UTF-8. The 1–10,000 ms
+  execution budget includes tab/authorization checks and page rediscovery;
+  invocation does not receive a new budget after a delay. A real `AbortSignal`
+  accompanies the callback; cancellation requests cannot roll back side effects.
 - Input and optional output JSON Schema are checked by `tool-schema.js` against a
   deliberately small fail-closed dialect (type, properties, required,
   additionalProperties boolean, items, enum, min/max bounds). `$ref`, `oneOf`,
@@ -54,6 +62,9 @@ listener, nonce or page-to-extension privilege relay.
   of a tool with identical metadata cannot be proven absent between discovery and
   execution. A future browser/version-qualified stable-identity API is needed for
   high-risk operations; keep them disabled.
+- The MAIN-world clock, APIs and callback belong to the untrusted page. Timing
+  checks bound cooperative execution and late initiation; they do not sandbox
+  hostile page code or guarantee that a running callback honors cancellation.
 - The module does not yet provide a user-facing opt-in control; it is a library
   for a separately reviewed UI integration, not an active extension feature.
 

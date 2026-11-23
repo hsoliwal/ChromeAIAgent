@@ -154,8 +154,10 @@
         documentId: tool.documentId, name: tool.name, signature: tool.signature,
         inputJson, input, reviewEpoch, rawInput: jsonInput.value,
         toolChoice: toolSelect.value };
+      const reviewJson = inputJson.replace(/\p{Bidi_Control}/gu,
+        char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0'));
       preview.textContent = 'Target: ' + current.origin + '\nTool: ' + tool.name +
-        '\nExact arguments:\n' + inputJson +
+        '\nExact arguments:\n' + reviewJson +
         '\n\nThis page operation may have side effects. Execution is not reversible.' +
         '\nClick Approve and execute once to grant precisely one call.';
       executeButton.disabled = false;
@@ -171,7 +173,9 @@
     executeButton.disabled = true;
     setBusy(true);
     try {
-      // Re-confirm the chosen tab/origin before arming a single exact action.
+      const deadlineEpochMs = performance.timeOrigin + performance.now() + permission.ttlMs;
+      permission.armExecute(action);
+      // The approval can expire or be revoked while the tab lookup is pending.
       const tab = await chrome.tabs.get(action.tabId);
       // An asynchronous tab query must not turn an invalidated review into
       // permission. This guards even programmatic changes to the trusted UI.
@@ -181,12 +185,11 @@
         throw new Error('review_invalidated');
       }
       if (tabOrigin(tab.url) !== action.origin ||
-          current.tabId !== action.tabId) throw new Error('Target tab changed.');
-      permission.armExecute(action);
+          current?.tabId !== action.tabId) throw new Error('Target tab changed.');
       const result = await adapter.execute({
         tabId: action.tabId, expectedOrigin: action.origin,
         documentId: action.documentId, name: action.name,
-        signature: action.signature, input: action.input, timeoutMs: 5000
+        signature: action.signature, input: action.input, timeoutMs: 5000, deadlineEpochMs
       });
       output.textContent = result;
       announce('The one-time tool operation returned data. Result is untrusted.');

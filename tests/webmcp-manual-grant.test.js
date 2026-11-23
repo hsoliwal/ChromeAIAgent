@@ -89,6 +89,43 @@ test('invalid replacement attempt revokes the old authorization', () => {
   assert.equal(gate.authorize({ kind: 'execute', ...execution }), false);
 });
 
+test('missing or null replacement scope revokes the old authorization', () => {
+  const gate = new WebMcpOneShotGrant();
+  for (const replace of [() => gate.armDiscover(), () => gate.armExecute(null)]) {
+    gate.armExecute(execution);
+    assert.throws(replace, TypeError);
+    assert.equal(gate.authorize({ kind: 'execute', ...execution }), false);
+  }
+});
+
+test('scope accessor failure revokes the old authorization', () => {
+  const gate = new WebMcpOneShotGrant();
+  const unreadable = {
+    get tabId() { throw new Error('unreadable_scope'); }
+  };
+  for (const replace of [() => gate.armDiscover(unreadable), () => gate.armExecute(unreadable)]) {
+    gate.armExecute(execution);
+    assert.throws(replace, /unreadable_scope/);
+    assert.equal(gate.authorize({ kind: 'execute', ...execution }), false);
+  }
+});
+
+test('metadata signature limit is 16 KiB of UTF-8', () => {
+  const gate = new WebMcpOneShotGrant();
+  const description = '界'.repeat(5455);
+  const signature = JSON.stringify({ description: description + 'a' });
+  const oversized = JSON.stringify({ description: description + 'ab' });
+  assert.equal(Buffer.byteLength(signature, 'utf8'), 16384);
+  assert.equal(Buffer.byteLength(oversized, 'utf8'), 16385);
+
+  gate.armExecute({ ...execution, signature });
+  assert.equal(gate.authorize({ kind: 'execute', ...execution, signature }), true);
+  gate.armExecute({ ...execution, signature });
+  assert.throws(() => gate.armExecute({ ...execution, signature: oversized }),
+    /invalid_grant_scope/);
+  assert.equal(gate.authorize({ kind: 'execute', ...execution, signature }), false);
+});
+
 test('UTF-8 byte bound rejects multibyte arguments that fit in UTF-16 length', () => {
   const grant = new WebMcpOneShotGrant();
   const inputJson = JSON.stringify({ text: '\u{1F600}'.repeat(17000) });

@@ -4,6 +4,7 @@ on:
     paths:
       - 'src/webmcp/**'
       - 'tests/webmcp-contract.test.js'
+      - 'tests/webmcp-deadline.test.js'
       - 'tests/webmcp-polyfill-browser.test.mjs'
       - 'tests/webmcp-mv3-browser.test.mjs'
       - '.github/workflows/webmcp-contract.yml'
@@ -22,7 +23,7 @@ jobs:
           node-version: '22'
       - run: node --check src/webmcp/page-tool-adapter.js
       - run: node --check src/webmcp/tool-schema.js
-      - run: node --test tests/webmcp-contract.test.js
+      - run: node --test tests/webmcp-contract.test.js tests/webmcp-deadline.test.js
 
   official-polyfill-browser:
     runs-on: ubuntu-24.04

@@ -1,9 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 'use strict';
 
+const MAX_SIGNATURE_BYTES = 16 * 1024;
+
 // One user event arms at most one exact, short-lived request. No persistent grants.
 // This is an extension-owned callback; do not expose it in the page MAIN world.
 class WebMcpOneShotGrant {
+  // The manual console uses the 8-second default.
   constructor({ now = () => performance.now(), ttlMs = 8000 } = {}) {
     if (typeof now !== 'function' || !Number.isSafeInteger(ttlMs) ||
         ttlMs < 1 || ttlMs > 15000) throw new TypeError('invalid_grant_config');
@@ -12,11 +15,15 @@ class WebMcpOneShotGrant {
     this.pending = null;
   }
 
-  armDiscover({ tabId, origin }) {
+  armDiscover(scope) {
+    this.revoke();
+    const { tabId, origin } = scope;
     this.arm({ kind: 'discover', tabId, origin });
   }
 
-  armExecute({ tabId, origin, documentId, name, signature, inputJson }) {
+  armExecute(scope) {
+    this.revoke();
+    const { tabId, origin, documentId, name, signature, inputJson } = scope;
     this.arm({ kind: 'execute', tabId, origin, documentId, name, signature, inputJson });
   }
 
@@ -40,7 +47,8 @@ class WebMcpOneShotGrant {
       typeof scope.documentId !== 'string' || scope.documentId.length < 1 ||
       scope.documentId.length > 128 || typeof scope.name !== 'string' ||
       !/^[\w.-]{1,128}$/.test(scope.name) || typeof scope.signature !== 'string' ||
-      scope.signature.length < 1 || scope.signature.length > 16384 ||
+      scope.signature.length < 1 || scope.signature.length > MAX_SIGNATURE_BYTES ||
+      new TextEncoder().encode(scope.signature).length > MAX_SIGNATURE_BYTES ||
       typeof scope.inputJson !== 'string' || new TextEncoder().encode(scope.inputJson).length > 65536)) {
       throw new TypeError('invalid_grant_scope');
     }

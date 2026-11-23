@@ -74,7 +74,7 @@ function fixture() {
   function Option(text, value) { this.text = text; this.value = value; }
   runInNewContext(controller, {
     document, chrome, Option, URL, TextEncoder, WebMcpOneShotGrant,
-    WebMcpPageToolAdapter: FakeAdapter, WebMcpSchema, console
+    WebMcpPageToolAdapter: FakeAdapter, WebMcpSchema, console, performance
   }, { filename: 'manual-console.js' });
   return { controls, chrome, resolveTab: value => resolveTab(value),
     count: () => executeCalls };
@@ -95,7 +95,7 @@ async function reviewReady(fixt) {
   assert.equal(fixt.count(), 0, 'review must not execute');
 }
 
-test('approval invalidated during async tab check never arms a stale operation', async () => {
+test('approval invalidated during async tab check never dispatches a stale operation', async () => {
   const fixt = fixture();
   const c = fixt.controls;
   await reviewReady(fixt);

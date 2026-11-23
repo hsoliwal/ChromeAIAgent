@@ -15,6 +15,24 @@ const upstream = join(dirname(fileURLToPath(import.meta.resolve('@w3c/webmcp-pol
   'polyfill.js');
 let server, origin, context, extension, target, root;
 
+async function installFixture(page) {
+  await page.addScriptTag({ path: upstream });
+  await page.evaluate(async () => {
+    await document.modelContext.registerTool({
+      name: 'fixture.read', description: 'Read a bounded value',
+      inputSchema: { type: 'object', required: ['value'],
+        properties: { value: { type: 'string' } }, additionalProperties: false },
+      outputSchema: { type: 'object', required: ['echo'],
+        properties: { echo: { type: 'string' } }, additionalProperties: false },
+      annotations: { readOnlyHint: true },
+      execute(input) {
+        document.body.dataset.calls = String(Number(document.body.dataset.calls || '0') + 1);
+        return { echo: input.value };
+      }
+    });
+  });
+}
+
 before(async () => {
   root = await mkdtemp(join(tmpdir(), 'webmcp-manual-ui-'));
   const dest = join(root, 'src', 'webmcp');
@@ -62,21 +80,7 @@ before(async () => {
   assert.match(id, /^[a-p]{32}$/);
   target = await context.newPage();
   await target.goto(origin + '/target');
-  await target.addScriptTag({ path: upstream });
-  await target.evaluate(async () => {
-    await document.modelContext.registerTool({
-      name: 'fixture.read', description: 'Read a bounded value',
-      inputSchema: { type: 'object', required: ['value'],
-        properties: { value: { type: 'string' } }, additionalProperties: false },
-      outputSchema: { type: 'object', required: ['echo'],
-        properties: { echo: { type: 'string' } }, additionalProperties: false },
-      annotations: { readOnlyHint: true },
-      execute(input) {
-        document.body.dataset.calls = String(Number(document.body.dataset.calls || '0') + 1);
-        return { echo: input.value };
-      }
-    });
-  });
+  await installFixture(target);
   extension = await context.newPage();
   await extension.goto('chrome-extension://' + id + '/src/webmcp/manual-console.html');
 });
@@ -120,10 +124,17 @@ test('manual discovery, review and one-use execution; navigation invalidates doc
   assert.equal(await extension.locator('#execute-once').isDisabled(), true);
   await extension.locator('#review-once').click();
   await target.goto(origin + '/new-document');
+  // A replacement document exposes the SAME valid tool. Denial must come
+  // from Chrome document targeting, not merely the absence of a registry.
+  await installFixture(target);
+  assert.deepEqual(await target.evaluate(async () =>
+    (await document.modelContext.getTools()).map(tool => tool.name)), ['fixture.read']);
   await extension.locator('#execute-once').click();
   await extension.waitForFunction(() =>
     document.getElementById('status')?.textContent?.includes('Operation denied/failed'),
     null, { timeout: 15000 });
   assert.equal(await extension.locator('#execute-once').isDisabled(), true);
   assert.match(await extension.locator('#status').textContent(), /no automatic retry/);
+  assert.equal(await target.evaluate(() => document.body.dataset.calls), undefined,
+    'stale approval must not invoke the matching tool in a replacement document');
 });
