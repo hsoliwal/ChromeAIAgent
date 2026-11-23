@@ -29,7 +29,14 @@ before(async () => {
     host_permissions: ['http://127.0.0.1/*'],
     background: { service_worker: 'background.js' }
   }));
-  await writeFile(join(root, 'background.js'), '// No autonomous registration or execution.\n');
+  // Register lifecycle listeners only: ensure Chrome starts the isolated test
+  // worker, without granting or dispatching any page tool.
+  await writeFile(join(root, 'background.js'), [
+    '// No autonomous registration or execution.',
+    'chrome.runtime.onInstalled.addListener(() => {});',
+    'chrome.runtime.onStartup.addListener(() => {});',
+    ''
+  ].join('\n'));
   server = createServer((request, response) => {
     if (new URL(request.url, 'http://127.0.0.1').pathname === '/favicon.ico') {
       response.writeHead(204).end();
