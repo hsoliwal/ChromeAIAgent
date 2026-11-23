@@ -1,0 +1,27 @@
+name: Java problem-reference search and JNI parity
+on:
+  pull_request:
+    paths:
+      - 'java-agent/**'
+      - 'docs/M3_PROBLEM_SEARCH_V1.md'
+      - '.github/workflows/java-problem-search-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Existing Java/JNI regression
+        run: sh java-agent/scripts/verify.sh
+      - name: Category search and JNI regression
+        run: sh java-agent/scripts/verify-problem-search.sh
+      - name: Maven package (when available)
+        run: mvn -B -ntp -f java-agent/pom.xml package
