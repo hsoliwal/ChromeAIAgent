@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: MIT
+name: WebMCP native origin and cancellation
+on:
+  pull_request:
+    paths:
+      - 'tests/webmcp-native-security.test.mjs'
+      - 'docs/WEBMCP_NATIVE_POLICY_MATRIX.md'
+      - '.github/workflows/webmcp-native-security.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-policy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned Playwright
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund playwright@1.64.0
+      - name: Install headed Chromium and system libraries
+        run: npx playwright install --with-deps chromium
+      - name: Native WebMCP security and lifecycle tests
+        run: xvfb-run -a node --test tests/webmcp-native-security.test.mjs
