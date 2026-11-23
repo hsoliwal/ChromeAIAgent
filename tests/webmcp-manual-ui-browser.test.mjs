@@ -92,6 +92,12 @@ test('manual discovery, review and one-use execution; navigation invalidates doc
     document.getElementById('status')?.textContent?.includes('Discovered 1 tools'),
     null, { timeout: 15000 });
   await extension.locator('#target-tool').selectOption({ label: 'fixture.read' });
+  // Invalid input is rejected at review time, with no grant and no execution.
+  await extension.locator('#input-json').fill('{"value":42}');
+  await extension.locator('#review-once').click();
+  assert.match(await extension.locator('#status').textContent(), /schema_type_mismatch/);
+  assert.equal(await extension.locator('#execute-once').isDisabled(), true);
+  assert.equal(await target.evaluate(() => document.body.dataset.calls), undefined);
   await extension.locator('#input-json').fill('{"value":"user approved"}');
   await extension.locator('#review-once').click();
   assert.match(await extension.locator('#approval-preview').textContent(), /user approved/);
