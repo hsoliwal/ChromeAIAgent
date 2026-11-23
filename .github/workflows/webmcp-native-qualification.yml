@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: hsoliwal/teavm
-          ref: 3afe65274a093054fc0b112adfabb6136017e9df
+          ref: 7eaf021d7958a372fbb4250d899485ab7b89b492
           path: teavm
           persist-credentials: false
       - uses: actions/setup-java@v4
@@ -26,7 +26,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Verify precise TeaVM candidate revision
         working-directory: teavm
-        run: test "$(git rev-parse HEAD)" = "3afe65274a093054fc0b112adfabb6136017e9df"
+        run: test "$(git rev-parse HEAD)" = "7eaf021d7958a372fbb4250d899485ab7b89b492"
       - name: Compile real JavaScript overlays with Checkstyle
         working-directory: teavm
         run: ./gradlew --no-daemon --console=plain :jso:apis:compileJava :jso:apis:checkstyleMain
