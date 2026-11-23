@@ -138,7 +138,14 @@
       if (new TextEncoder().encode(inputJson).length > 64 * 1024) {
         throw new Error('Arguments exceed the 64 KiB limit.');
       }
-      // The executor also validates the tool's pinned input/output schema.
+      // Refuse unsupported schemas before even displaying the approval button.
+      const metadata = JSON.parse(tool.signature);
+      if (!metadata.inputSchema) throw new Error('This tool has no supported input schema.');
+      WebMcpSchema.validateSchemaValue(input, metadata.inputSchema);
+      if (metadata.outputSchema) {
+        WebMcpSchema.validateSchemaDefinition(metadata.outputSchema);
+      }
+      // The executor repeats these checks just before the authorized execution.
       prepared = { tabId: current.tabId, origin: current.origin,
         documentId: tool.documentId, name: tool.name, signature: tool.signature,
         inputJson, input };
