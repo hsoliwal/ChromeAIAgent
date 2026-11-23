@@ -46,11 +46,12 @@ public record ProblemReference(Source source, String id, String category, String
         }
         tags = List.copyOf(canonicalTags);
         Objects.requireNonNull(uri, "uri");
+        String expectedPath = source.pathPrefix + id
+                + (source == Source.HACKERRANK ? "/problem" : "/");
         if (!"https".equals(uri.getScheme()) || !source.host.equals(uri.getHost())
                 || uri.getPort() != -1 || uri.getRawUserInfo() != null
                 || uri.getRawQuery() != null || uri.getRawFragment() != null
-                || uri.getRawPath() == null || !uri.getRawPath().startsWith(source.pathPrefix)
-                || uri.getRawPath().contains("..") || uri.getRawPath().contains("//")) {
+                || !expectedPath.equals(uri.getRawPath())) {
             throw new IllegalArgumentException("unapproved problem reference origin/path");
         }
     }

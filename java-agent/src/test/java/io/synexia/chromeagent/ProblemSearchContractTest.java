@@ -93,6 +93,9 @@ public final class ProblemSearchContractTest {
                 "Bad", List.of(), URI.create("https://leetcode.com/problems/bad/?q=1")),
                 "query URL");
         refused(() -> new ProblemReference(ProblemReference.Source.LEETCODE, "bad", "search",
+                "Bad", List.of(), URI.create("https://leetcode.com/problems/another/")),
+                "source/id path mismatch");
+        refused(() -> new ProblemReference(ProblemReference.Source.LEETCODE, "bad", "search",
                 "Bad", List.of("prefix", "prefix"), URI.create("https://leetcode.com/problems/bad/")),
                 "duplicate tags");
         List<ProblemReference> capacity = new ArrayList<>(Collections.nCopies(4097, seed.get(0)));

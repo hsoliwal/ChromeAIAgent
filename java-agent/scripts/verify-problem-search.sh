@@ -15,6 +15,8 @@ g++ -std=c++17 -O2 -fPIC -Wall -Wextra -Werror \
     -I"$JAVA_HOME_DETECTED/include" -I"$JAVA_HOME_DETECTED/include/linux" \
     -shared native/posting_intersection_jni.cpp -o target/native/libchromeaiagent_postings.so
 java -ea -cp target/classes:target/test-classes io.synexia.chromeagent.ProblemSearchContractTest
+java -ea -cp target/classes:target/test-classes io.synexia.chromeagent.ProblemCatalogueTsvTest
+java -ea -cp target/classes:target/test-classes io.synexia.chromeagent.ProblemSearchMainTest
 java -ea -Xcheck:jni -cp target/classes:target/test-classes \
     io.synexia.chromeagent.PostingParityContractTest "$(pwd)/target/native/libchromeaiagent_postings.so"
 find src/main src/test native scripts -type f -print | LC_ALL=C sort | xargs sha256sum > target/problem-source-sha256.txt

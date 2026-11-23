@@ -4,7 +4,7 @@ Recorded 2026-11-23. All new product changes are additive; no upstream Chrome ex
 
 ## Fixed scope
 
-Source fork: `hsoliwal/ChromeAIAgent`, additive to merged Java agent PR #1. Java model/backend ownership stays with merged `hsoliwal/ChromeLLM` PR #54; Maven plan/build ownership stays with merged `hsoliwal/maven` PR #38. The new catalogue contains eight manually curated, publicly accessible problem-reference links. No remote scraped metadata, problem statement or user solution was copied. New Java and C++ implementations are original code using standard algorithms.
+Source fork: `hsoliwal/ChromeAIAgent`, additive to merged Java agent PR #1. Java model/backend ownership stays with merged `hsoliwal/ChromeLLM` PR #54; Maven plan/build ownership stays with merged `hsoliwal/maven` PR #38. The new catalogue contains eight manually curated, publicly accessible problem-reference links and an explicit offline user-supplied TSV loader/CLI. No remote scraped metadata, problem statement or user solution was copied. New Java and C++ implementations are original code using standard algorithms.
 
 ## Local execution (not hosted CI)
 
@@ -12,9 +12,11 @@ Environment: OpenJDK `21.0.12.1`, `/usr/bin/g++` C++17 compiler, Linux x86_64. E
 
 - Existing AgentCoreContractTest: **32 checks passed**.
 - Existing KeywordParityContractTest (actual JNI): **344 checks passed**.
-- New ProblemSearchContractTest (metadata validation, source/category/prefix/AND query, deterministic canonicalization, ranking, refusals, immutability): **132 checks passed**.
+- New ProblemSearchContractTest (metadata validation, source/category/prefix/AND query, deterministic canonicalization, ranking, refusals, immutability): **133 checks passed**.
 - New PostingParityContractTest (actual JNI, exhaustive 7-bit subset pairing, max-size postings, refusal checks, index-backend equivalence): **16,420 checks passed**.
-- Total observed **16,928 checks** across the four suites.
+- New ProblemCatalogueTsvTest (explicit offline TSV, invalid UTF-8, malicious origin, duplicate/oversize/refusal): **17 checks passed**.
+- New ProblemSearchMainTest (CLI query/filter, input-file selection, argument refusals, replay): **18 checks passed**.
+- Total observed **16,964 checks** across the six suites.
 - Local `jar --create` succeeded; `jdeps --print-module-deps` reported **`java.base`** only.
 - Source list and SHA-256 ledger: `java-agent/target/problem-source-sha256.txt` is locally generated and intentionally excluded from the PR.
 
