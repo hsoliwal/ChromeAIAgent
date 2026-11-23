@@ -205,7 +205,7 @@ class WebMcpPageToolAdapter {
     schemaValidation.validateSchemaValue(JSON.parse(inputJson), descriptor.inputSchema);
     if (descriptor.outputSchema) schemaValidation.validateSchemaDefinition(descriptor.outputSchema);
     await this.checkTab(tabId, expectedOrigin);
-    if ((await this.authorize({ kind: 'execute', tabId, origin: expectedOrigin, name,
+    if ((await this.authorize({ kind: 'execute', tabId, origin: expectedOrigin, documentId, name,
       signature, inputJson })) !== true) {
       throw new Error('extension_permission_denied');
     }

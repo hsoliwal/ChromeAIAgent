@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: MIT
+name: WebMCP manual approval contracts
+on:
+  pull_request:
+    paths:
+      - 'src/webmcp/**'
+      - 'tests/webmcp-contract.test.js'
+      - 'tests/webmcp-manual-grant.test.js'
+      - '.github/workflows/webmcp-manual-approval.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  consent-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --check src/webmcp/one-shot-grant.js
+      - run: node --check src/webmcp/manual-console.js
+      - run: node --check src/webmcp/page-tool-adapter.js
+      - run: node --test tests/webmcp-manual-grant.test.js tests/webmcp-contract.test.js
