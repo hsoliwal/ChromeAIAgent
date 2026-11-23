@@ -79,3 +79,28 @@ test('malformed or insecure requests are not authorizable', () => {
   assert.throws(() => gate.armExecute({ ...execution, inputJson: 'x'.repeat(70000) }),
     /invalid_grant_scope/);
 });
+
+
+test('invalid replacement attempt revokes the old authorization', () => {
+  const gate = new WebMcpOneShotGrant();
+  gate.armExecute(execution);
+  assert.throws(() => gate.armExecute({ ...execution, documentId: '' }),
+    /invalid_grant_scope/);
+  assert.equal(gate.authorize({ kind: 'execute', ...execution }), false);
+});
+
+test('UTF-8 byte bound rejects multibyte arguments that fit in UTF-16 length', () => {
+  const grant = new WebMcpOneShotGrant();
+  const inputJson = JSON.stringify({ text: '\u{1F600}'.repeat(17000) });
+  assert.ok(inputJson.length < 65536);
+  assert.ok(new TextEncoder().encode(inputJson).length > 65536);
+  assert.throws(() => grant.armExecute({ ...execution, inputJson }),
+    /invalid_grant_scope/);
+});
+
+test('default grant expiry uses monotonic performance clock', () => {
+  const grant = new WebMcpOneShotGrant();
+  assert.ok(Number.isFinite(grant.now()));
+  const started = grant.now();
+  assert.ok(grant.now() >= started);
+});
