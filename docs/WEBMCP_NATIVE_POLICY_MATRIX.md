@@ -5,11 +5,14 @@ Run headed Chromium with experimental native WebMCP features under Xvfb,
 Node 24 and pinned Playwright 1.64.0. Use two loopback **distinct origins**,
 with no polyfill installed or native API fallback.
 
-Tests refuse cross-origin iframe tool registration without Permissions Policy;
-check delegated registration but default-hidden tools, explicit `exposedTo`
-plus `fromOrigins` discovery and execution; verify registration lifetime
-revocation; check caller rejection and owner signal on cancellation; and
-verify caller-frame navigation aborts pending operations.
+The tests verify that Permissions Policy blocks registration in an
+undelegated cross-origin iframe. They verify that discovery requires
+`exposedTo` and `fromOrigins` for the delegated iframe's tool and that the
+exposed tool executes successfully. They also check registration revocation,
+caller rejection and the owner callback's abort event on cancellation, and
+owner cancellation when Playwright navigates the delegated caller iframe.
+The navigation uses a different document at the caller's existing origin.
+The two loopback origins differ by port and are on the same site.
 
 These assertions are native experimental API security probes; their value
 is only a real finished hosted CI result, not source or stub assertions.
@@ -36,3 +39,10 @@ correction, not weakened permission or cancellation behavior.
 No production adapter or extension manifest is changed; the updated
 case requires an independently completed hosted CI rerun before
 it can be marked passed.
+
+The follow-up keeps the two-second owner-delivery bound, independently
+checks the owner's aborted signal and `AbortError` reason, and clears
+timeout handles after each observation. The caller and owner outcomes
+must both arrive; a missing outcome still fails the test. The discovery
+case checks the pinned native descriptor's `window` field and does not
+claim to exercise execution of a hidden private tool.

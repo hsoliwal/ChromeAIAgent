@@ -84,7 +84,7 @@ test('default cross-origin iframe policy refuses tool registration', async () =>
   } finally { await page.close(); }
 });
 
-test('cross-origin discovery and execution need delegation, exposure and fromOrigins', async () => {
+test('cross-origin discovery filters tools and permits execution of the exposed tool', async () => {
   const page = await rootPage();
   try {
     const child = await frameIn(page, true, 'exposure');
@@ -92,7 +92,7 @@ test('cross-origin discovery and execution need delegation, exposure and fromOri
       const ctx = document.modelContext;
       await ctx.registerTool({
         name: 'policy.private', description: 'Not exposed across origins',
-        execute() { document.body.dataset.exposed = 'wrong'; return { private: true }; }
+        execute() { return { private: true }; }
       });
       await ctx.registerTool({
         name: 'policy.public', description: 'Explicitly exposed read',
@@ -108,7 +108,7 @@ test('cross-origin discovery and execution need delegation, exposure and fromOri
       return {
         defaultNames,
         explicitNames: explicit.map(tool => tool.name),
-        ownerIsChild: (publicTool?.source ?? publicTool?.window) ===
+        ownerIsChild: publicTool?.window ===
           document.querySelector('iframe').contentWindow,
         origin: publicTool?.origin,
         output: publicTool ? await ctx.executeTool(publicTool, {}) : null
@@ -120,7 +120,6 @@ test('cross-origin discovery and execution need delegation, exposure and fromOri
     assert.equal(result.ownerIsChild, true);
     assert.equal(result.origin, originB);
     assert.deepEqual(JSON.parse(result.output), { owner: 'child', allowed: true });
-    assert.equal(await child.evaluate(() => document.body.dataset.exposed), undefined);
   } finally { await page.close(); }
 });
 
@@ -154,19 +153,26 @@ test('execution cancellation rejects caller and aborts owning callback', async (
   try {
     const result = await page.evaluate(async () => {
       const ctx = document.modelContext;
-      let began;
-      const started = new Promise(done => { began = done; });
-      let ownerAborted = false;
-      let notifyOwnerAbort;
-      const ownerAbortDelivered = new Promise(done => { notifyOwnerAbort = done; });
+      const started = Promise.withResolvers();
+      const ownerAbort = Promise.withResolvers();
+      async function waitFor(promise, message, timeoutMs = 3000) {
+        let timer;
+        const timeout = new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Error(message)), timeoutMs);
+        });
+        try {
+          return await Promise.race([promise, timeout]);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
       await ctx.registerTool({
         name: 'policy.pending', description: 'Pending cancellable tool',
         execute(_input, { signal }) {
-          began();
           signal.addEventListener('abort', () => {
-            ownerAborted = true;
-            notifyOwnerAbort();
+            ownerAbort.resolve({ aborted: signal.aborted, reason: signal.reason?.name });
           }, { once: true });
+          started.resolve();
           return new Promise(() => {});
         }
       });
@@ -174,21 +180,18 @@ test('execution cancellation rejects caller and aborts owning callback', async (
       const control = new AbortController();
       const pending = ctx.executeTool(tool, {}, { signal: control.signal })
         .then(() => 'unexpected-success', error => error.name);
-      await Promise.race([started,
-        new Promise((_, reject) => setTimeout(() => reject(Error('callback_timeout')), 3000))]);
+      await waitFor(started.promise, 'tool callback did not start');
       control.abort();
-      const rejection = await Promise.race([pending,
-        new Promise((_, reject) => setTimeout(() => reject(Error('abort_timeout')), 3000))]);
-      // Chromium may reject the caller before the callback's abort event
-      // is dispatched. Do not remove the owner-signal assertion; wait for
-      // delivery with a hard bound so missing propagation still fails.
-      const delivered = await Promise.race([
-        ownerAbortDelivered.then(() => true),
-        new Promise(done => setTimeout(() => done(false), 2000))
+      // Caller rejection and owner signal delivery use separate task queues.
+      // Preserve the owner's strict two-second bound and clear both timers.
+      const [rejection, owner] = await Promise.all([
+        waitFor(pending, 'caller did not reject on cancellation'),
+        waitFor(ownerAbort.promise, 'owner abort event was not delivered', 2000)
       ]);
-      return { rejection, ownerAborted: delivered && ownerAborted };
+      return { rejection, ownerAborted: owner.aborted, ownerReason: owner.reason };
     });
-    assert.deepEqual(result, { rejection: 'AbortError', ownerAborted: true });
+    assert.deepEqual(result, { rejection: 'AbortError', ownerAborted: true,
+      ownerReason: 'AbortError' });
   } finally { await page.close(); }
 });
 
