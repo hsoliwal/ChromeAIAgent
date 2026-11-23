@@ -33,3 +33,28 @@ production consent policy review remain separate gates.
 reviewing actual permissions, user gestures, native/polyfill version matrix
 and source/history audit.** No ChromeLLM browser runtime or MCP transport is
 introduced. MIT license applies.
+
+
+## Race-free reviewed intent (2026-11-23)
+
+Manual review now records an incrementing `reviewEpoch`, the exact raw input
+as displayed, and the selected tool index. Input and selection changes
+invalidate that review. During the asynchronous `chrome.tabs.get()` check,
+the UI disables input editing; immediately afterward, before `armExecute`,
+the extension rechecks the review epoch, raw input and tool selection.
+If anything changed, it raises `review_invalidated`, **without arming** an
+execution grant. The browser-side document ID remains pinned by the adapter.
+
+`tests/webmcp-manual-review-race.test.js` uses a deterministic in-memory
+DOM plus a deliberately deferred `chrome.tabs.get` to verify both cases:
+programmatic review invalidation before the awaited check settles must not
+execute, while unchanged explicit intent still authorizes exactly once.
+The existing real MV3 test checks that merely reviewing does not execute,
+that invalid arguments are refused, and that document navigation invalidates
+a reviewed call. These separate tests must pass CI before promotion.
+
+**Boundary:** disabling the input prevents ordinary editing, but is not
+a replacement for the review-epoch check or browser document-ID matching.
+Browser callbacks may have irreversible effects once invoked; a timeout
+never authorizes an automatic retry. The console remains dormant and is
+not imported into the shipping extension's normal background/UI paths.
