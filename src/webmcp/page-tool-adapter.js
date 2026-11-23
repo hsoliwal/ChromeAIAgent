@@ -48,7 +48,9 @@ async function pageDiscover(expectedOrigin) {
       const signature = JSON.stringify({ name: tool.name, origin: tool.origin,
         description: tool.description, inputSchema: tool.inputSchema ?? null,
         outputSchema: tool.outputSchema ?? null });
-      if (signature.length > 16384) return { ok: false, error: 'metadata_limit_exceeded' };
+      if (signature.length > 16384 || new TextEncoder().encode(signature).length > 16384) {
+        return { ok: false, error: 'metadata_limit_exceeded' };
+      }
       result.push({ name: tool.name, origin: tool.origin,
         description: tool.description.slice(0, 4096), signature,
         readOnlyHint: tool.annotations?.readOnlyHint === true });
@@ -64,7 +66,7 @@ async function pageDiscover(expectedOrigin) {
 
 // A fresh descriptor is discovered and executed in ONE page script invocation.
 // No name-only descriptor is transmitted across realms or cached in the worker.
-async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs) {
+async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs, deadlineEpochMs) {
   if (!globalThis.isSecureContext || location.origin !== expectedOrigin) {
     return { ok: false, error: 'origin_or_context_denied' };
   }
@@ -73,8 +75,25 @@ async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs
       typeof context.executeTool !== 'function') {
     return { ok: false, error: 'webmcp_unavailable' };
   }
+  // Keep the extension's original monotonic deadline across injection and
+  // rediscovery. This bounds cooperative MAIN-world code, not a hostile page.
+  const now = () => performance.timeOrigin + performance.now();
+  const expiresAt = Math.min(now() + timeoutMs, deadlineEpochMs ?? Infinity);
+  if (!Number.isFinite(expiresAt) || now() >= expiresAt) {
+    return { ok: false, error: 'deadline_exceeded' };
+  }
+  const controller = new AbortController();
+  let deadline;
+  const expired = new Promise((_, reject) => {
+    deadline = setTimeout(() => {
+      controller.abort();
+      reject(new Error('deadline_exceeded'));
+    }, Math.max(1, Math.ceil(expiresAt - now())));
+  });
+  const isExpired = () => controller.signal.aborted || now() >= expiresAt;
   try {
-    const tools = await context.getTools({ fromOrigins: [] });
+    const tools = await Promise.race([context.getTools({ fromOrigins: [] }), expired]);
+    if (isExpired()) return { ok: false, error: 'deadline_exceeded' };
     if (!Array.isArray(tools) || tools.length > 64) {
       return { ok: false, error: 'tool_limit_exceeded' };
     }
@@ -90,20 +109,15 @@ async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs
     if (input === null || typeof input !== 'object' || Array.isArray(input)) {
       return { ok: false, error: 'invalid_arguments' };
     }
-    const controller = new AbortController();
-    let deadline;
-    const expired = new Promise((_, reject) => {
-      deadline = setTimeout(() => {
-        controller.abort();
-        reject(new Error('deadline_exceeded'));
-      }, timeoutMs);
-    });
+    // Check after synchronous metadata/JSON work as well: a queued timeout is
+    // not guaranteed to run before an already-resolved promise continuation.
+    if (isExpired()) return { ok: false, error: 'deadline_exceeded' };
     try {
       // Never trust a page callback to settle its promise after cancellation.
       const outputJson = await Promise.race([
         context.executeTool(tool, input, { signal: controller.signal }), expired
       ]);
-      if (controller.signal.aborted) return { ok: false, error: 'deadline_exceeded' };
+      if (isExpired()) return { ok: false, error: 'deadline_exceeded' };
       if (typeof outputJson !== 'string') return { ok: false, error: 'incompatible_result_version' };
       if (new TextEncoder().encode(outputJson).length > 262144) {
         return { ok: false, error: 'result_limit_exceeded' };
@@ -112,11 +126,35 @@ async function pageExecute(expectedOrigin, name, signature, inputJson, timeoutMs
       return { ok: true, outputJson };
     } catch {
       return { ok: false, error: controller.signal.aborted ? 'deadline_exceeded' : 'tool_failed' };
-    } finally {
-      clearTimeout(deadline);
     }
   } catch {
-    return { ok: false, error: 'execution_failed' };
+    return { ok: false, error: isExpired() ? 'deadline_exceeded' : 'execution_failed' };
+  } finally {
+    clearTimeout(deadline);
+  }
+}
+
+// Extension-owned checks use a monotonic epoch so different document time
+// origins share one deadline without depending on mutable wall-clock time.
+async function beforeDeadline(operation, deadlineEpochMs) {
+  const now = () => performance.timeOrigin + performance.now();
+  if (now() >= deadlineEpochMs) throw new Error('deadline_exceeded');
+  let timer;
+  try {
+    const value = await Promise.race([
+      Promise.resolve().then(() => {
+        if (now() >= deadlineEpochMs) throw new Error('deadline_exceeded');
+        return operation();
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('deadline_exceeded')),
+          Math.max(1, Math.ceil(deadlineEpochMs - now())));
+      })
+    ]);
+    if (now() >= deadlineEpochMs) throw new Error('deadline_exceeded');
+    return value;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -185,11 +223,16 @@ class WebMcpPageToolAdapter {
     return result.tools.map(tool => ({ ...tool, documentId: result.documentId }));
   }
 
-  async execute({ tabId, expectedOrigin, name, signature, documentId, input = {}, timeoutMs = 5000 }) {
+  async execute({ tabId, expectedOrigin, name, signature, documentId, input = {},
+      timeoutMs = 5000, deadlineEpochMs }) {
     if (typeof documentId !== 'string' || documentId.length < 1 || documentId.length > 128 ||
         typeof name !== 'string' || !/^[\w.-]{1,128}$/.test(name) ||
         typeof signature !== 'string' || signature.length > MAX_TOOL_METADATA ||
-        !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000) {
+        BufferOrTextBytes(signature) > MAX_TOOL_METADATA ||
+        !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10000 ||
+        (deadlineEpochMs !== undefined &&
+          (typeof deadlineEpochMs !== 'number' || !Number.isFinite(deadlineEpochMs) ||
+            deadlineEpochMs < 0))) {
       throw new Error('invalid_call');
     }
     if (input === null || typeof input !== 'object' || Array.isArray(input)) {
@@ -204,13 +247,20 @@ class WebMcpPageToolAdapter {
         !descriptor.inputSchema || !schemaValidation) throw new Error('unsupported_tool_schema');
     schemaValidation.validateSchemaValue(JSON.parse(inputJson), descriptor.inputSchema);
     if (descriptor.outputSchema) schemaValidation.validateSchemaDefinition(descriptor.outputSchema);
-    await this.checkTab(tabId, expectedOrigin);
-    if ((await this.authorize({ kind: 'execute', tabId, origin: expectedOrigin, name,
-      signature, inputJson })) !== true) {
+    const expiresAt = Math.min(performance.timeOrigin + performance.now() + timeoutMs,
+      deadlineEpochMs ?? Infinity);
+    await beforeDeadline(() => this.checkTab(tabId, expectedOrigin), expiresAt);
+    if ((await beforeDeadline(() => this.authorize({ kind: 'execute', tabId,
+      origin: expectedOrigin, documentId, name, signature, inputJson }), expiresAt)) !== true) {
       throw new Error('extension_permission_denied');
     }
+    // Awaiting authorization yields again after beforeDeadline resolves. Check
+    // in the same synchronous turn as dispatch, not only inside that helper.
+    if (performance.timeOrigin + performance.now() >= expiresAt) {
+      throw new Error('deadline_exceeded');
+    }
     const result = await this.runScript(tabId, pageExecute,
-      [expectedOrigin, name, signature, inputJson, timeoutMs], expectedOrigin,
+      [expectedOrigin, name, signature, inputJson, timeoutMs, expiresAt], expectedOrigin,
       documentId, Math.min(timeoutMs + 1500, 15000));
     if (typeof result.outputJson !== 'string' ||
         BufferOrTextBytes(result.outputJson) > MAX_RESULT_BYTES) {

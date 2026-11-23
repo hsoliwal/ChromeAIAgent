@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: MIT
+name: WebMCP manual approval contracts
+on:
+  pull_request:
+    paths:
+      - 'src/webmcp/**'
+      - 'tests/webmcp-contract.test.js'
+      - 'tests/webmcp-manual-grant.test.js'
+      - 'tests/webmcp-manual-review-race.test.js'
+      - 'tests/webmcp-manual-console.test.js'
+      - 'tests/webmcp-deadline.test.js'
+      - 'tests/webmcp-manual-ui-browser.test.mjs'
+      - '.github/workflows/webmcp-manual-approval.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  consent-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --check src/webmcp/one-shot-grant.js
+      - run: node --check src/webmcp/manual-console.js
+      - run: node --check src/webmcp/page-tool-adapter.js
+      - run: node --test tests/webmcp-manual-grant.test.js tests/webmcp-manual-console.test.js tests/webmcp-contract.test.js tests/webmcp-deadline.test.js tests/webmcp-manual-review-race.test.js
+
+  consent-browser:
+    needs: consent-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install official polyfill and browser harness
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @w3c/webmcp-polyfill@0.1.1 playwright@1.64.0
+      - name: Install full Chromium with extension support
+        run: npx playwright install --with-deps chromium
+      - name: Real MV3 user-driven consent flow
+        run: node --test tests/webmcp-manual-ui-browser.test.mjs

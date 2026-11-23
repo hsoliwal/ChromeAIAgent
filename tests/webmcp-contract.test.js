@@ -276,3 +276,17 @@ test('native-style Tool.source is used before polyfill window fallback', async (
   assert.equal(tools.length, 1);
   assert.equal(tools[0].name, 'native');
 });
+
+
+test('execution authorization includes discovered document ID for consent scoping', async () => {
+  const witnessed = [];
+  const run = fixture({ authorize: request => {
+    witnessed.push(request);
+    return true;
+  } });
+  const [tool] = await run.adapter.discover({ tabId: 4, expectedOrigin: 'https://example.org' });
+  await run.adapter.execute({ tabId: 4, expectedOrigin: 'https://example.org',
+    name: tool.name, signature: tool.signature, documentId: tool.documentId, input: {} });
+  const executionRequest = witnessed.find(request => request.kind === 'execute');
+  assert.equal(executionRequest.documentId, tool.documentId);
+});
