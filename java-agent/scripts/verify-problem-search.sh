@@ -19,5 +19,7 @@ java -ea -cp target/classes:target/test-classes io.synexia.chromeagent.ProblemCa
 java -ea -cp target/classes:target/test-classes io.synexia.chromeagent.ProblemSearchMainTest
 java -ea -Xcheck:jni -cp target/classes:target/test-classes \
     io.synexia.chromeagent.PostingParityContractTest "$(pwd)/target/native/libchromeaiagent_postings.so"
+java -ea -Xcheck:jni -cp target/classes:target/test-classes \
+    io.synexia.chromeagent.PinnedNativeCliContractTest "$(pwd)/target/native/libchromeaiagent_postings.so"
 find src/main src/test native scripts -type f -print | LC_ALL=C sort | xargs sha256sum > target/problem-source-sha256.txt
 printf '%s\n' 'VERIFICATION_PASS=problem-search-java21+jni'

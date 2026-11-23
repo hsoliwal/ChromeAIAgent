@@ -21,6 +21,8 @@ public final class ProblemSearchMain {
         ProblemReference.Source source = null;
         String category = null;
         Path catalogue = null;
+        Path nativeLibrary = null;
+        String nativeDigest = null;
         int limit = 20;
         boolean setLimit = false;
         List<String> terms = new ArrayList<>();
@@ -31,6 +33,12 @@ public final class ProblemSearchMain {
             if (!readingTerms && arg.startsWith("--tsv=")) {
                 if (catalogue != null) throw new IllegalArgumentException("duplicate catalogue option");
                 catalogue = Path.of(arg.substring(6));
+            } else if (!readingTerms && arg.startsWith("--jni-lib=")) {
+                if (nativeLibrary != null) throw new IllegalArgumentException("duplicate JNI library option");
+                nativeLibrary = Path.of(arg.substring("--jni-lib=".length()));
+            } else if (!readingTerms && arg.startsWith("--jni-sha256=")) {
+                if (nativeDigest != null) throw new IllegalArgumentException("duplicate JNI digest option");
+                nativeDigest = arg.substring("--jni-sha256=".length());
             } else if (!readingTerms && arg.startsWith("--source=")) {
                 if (source != null) throw new IllegalArgumentException("duplicate source option");
                 source = ProblemCatalogueTsv.parseSource(arg.substring(9));
@@ -50,9 +58,17 @@ public final class ProblemSearchMain {
                 if (terms.size() > 16) throw new IllegalArgumentException("too many query arguments");
             }
         }
+        if ((nativeLibrary == null) != (nativeDigest == null)) {
+            throw new IllegalArgumentException("JNI library and SHA-256 must be provided together");
+        }
         List<ProblemReference> items = catalogue == null
                 ? ProblemSeeds.verified() : ProblemCatalogueTsv.load(catalogue);
-        List<ProblemSearchIndex.Hit> matches = new ProblemSearchIndex(items).search(
+        ProblemSearchIndex.Backend backend = ProblemSearchIndex.Backend.JAVA;
+        if (nativeLibrary != null) {
+            NativePostingIntersection.loadVerified(nativeLibrary, nativeDigest);
+            backend = ProblemSearchIndex.Backend.JNI;
+        }
+        List<ProblemSearchIndex.Hit> matches = new ProblemSearchIndex(items, backend).search(
                 String.join(" ", terms), source, category, limit);
         output.println("source\tid\tcategory\tscore\turl\ttitle");
         for (ProblemSearchIndex.Hit hit : matches) {

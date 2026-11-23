@@ -17,6 +17,12 @@ public final class NativePostingIntersection {
         System.load(approvedAbsoluteLibrary.toRealPath().toString());
     }
 
+    /** Opt-in digest-checked native loading. Does not change the legacy load(Path) contract. */
+    public static void loadVerified(Path approvedAbsoluteLibrary, String expectedSha256)
+            throws IOException {
+        System.load(NativeLibraryAdmission.verify(approvedAbsoluteLibrary, expectedSha256).toString());
+    }
+
     public static int[] intersect(int[] left, int[] right) {
         PostingIntersection.validate(left);
         PostingIntersection.validate(right);
