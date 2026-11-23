@@ -94,6 +94,7 @@
     if (busy || !current) return;
     const target = current;
     forget();
+    current = target; // Reset stale tool state, but retain the user-selected tab.
     setBusy(true);
     try {
       permission.armDiscover({ tabId: target.tabId, origin: target.origin });
