@@ -157,11 +157,16 @@ test('execution cancellation rejects caller and aborts owning callback', async (
       let began;
       const started = new Promise(done => { began = done; });
       let ownerAborted = false;
+      let notifyOwnerAbort;
+      const ownerAbortDelivered = new Promise(done => { notifyOwnerAbort = done; });
       await ctx.registerTool({
         name: 'policy.pending', description: 'Pending cancellable tool',
         execute(_input, { signal }) {
           began();
-          signal.addEventListener('abort', () => { ownerAborted = true; }, { once: true });
+          signal.addEventListener('abort', () => {
+            ownerAborted = true;
+            notifyOwnerAbort();
+          }, { once: true });
           return new Promise(() => {});
         }
       });
@@ -174,8 +179,14 @@ test('execution cancellation rejects caller and aborts owning callback', async (
       control.abort();
       const rejection = await Promise.race([pending,
         new Promise((_, reject) => setTimeout(() => reject(Error('abort_timeout')), 3000))]);
-      await new Promise(done => setTimeout(done, 0));
-      return { rejection, ownerAborted };
+      // Chromium may reject the caller before the callback's abort event
+      // is dispatched. Do not remove the owner-signal assertion; wait for
+      // delivery with a hard bound so missing propagation still fails.
+      const delivered = await Promise.race([
+        ownerAbortDelivered.then(() => true),
+        new Promise(done => setTimeout(() => done(false), 2000))
+      ]);
+      return { rejection, ownerAborted: delivered && ownerAborted };
     });
     assert.deepEqual(result, { rejection: 'AbortError', ownerAborted: true });
   } finally { await page.close(); }
