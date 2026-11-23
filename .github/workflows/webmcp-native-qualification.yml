@@ -1,0 +1,69 @@
+# SPDX-License-Identifier: MIT
+name: WebMCP native TeaVM qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/webmcp-native-qualification.yml'
+      - 'docs/WEBMCP_NATIVE_QUALIFICATION.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: hsoliwal/teavm
+          ref: 3afe65274a093054fc0b112adfabb6136017e9df
+          path: teavm
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify precise TeaVM candidate revision
+        working-directory: teavm
+        run: test "$(git rev-parse HEAD)" = "3afe65274a093054fc0b112adfabb6136017e9df"
+      - name: Compile real JavaScript overlays with Checkstyle
+        working-directory: teavm
+        run: ./gradlew --no-daemon --console=plain :jso:apis:compileJava :jso:apis:checkstyleMain
+      - name: Publish fork compiler artifacts for isolated sample build
+        working-directory: teavm
+        run: ./gradlew --no-daemon --console=plain publishToMavenLocal -x test
+      - name: Compile TeaVM Java WebMCP sample and WAR
+        working-directory: teavm/samples
+        run: ./gradlew --no-daemon --console=plain :webmcp:generateJavaScript :webmcp:war
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned official polyfill and native-WebMCP Playwright 1.64
+        working-directory: teavm
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund @w3c/webmcp-polyfill@0.1.1 playwright@1.64.0
+      - name: Provision Chromium, Xvfb and native browser dependencies
+        working-directory: teavm
+        run: |
+          npx playwright install --with-deps chromium
+          command -v xvfb-run
+      - name: Print exact browser and Java/Node versions
+        working-directory: teavm
+        run: |
+          java -version
+          node --version
+          npm ls playwright @w3c/webmcp-polyfill --depth=0
+      - name: Prove compiled Java through official polyfill (control)
+        working-directory: teavm
+        run: node --test samples/webmcp/src/test/browser/runtime.test.mjs
+      - name: Prove compiled Java through native WebMCP and Playwright browser agent
+        working-directory: teavm
+        run: xvfb-run -a node --test samples/webmcp/src/test/browser/native.test.mjs
+      - name: Retain reproducible compiled WAR on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: teavm-webmcp-native-war
+          path: teavm/samples/webmcp/build/libs/*.war
+          if-no-files-found: ignore
+          retention-days: 5
