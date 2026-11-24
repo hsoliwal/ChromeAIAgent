@@ -5,10 +5,13 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.regex.Pattern;
 
 /** CLI determinism, user-selected catalogue and explicit option refusal. */
 public final class ProblemSearchMainTest {
     private static int checks;
+    /** {@link PrintStream#println} ends rows with the host separator: LF on Linux, CRLF on Windows. */
+    private static final String EOL = System.lineSeparator();
     private ProblemSearchMainTest() { }
 
     private static void check(boolean condition, String message) {
@@ -22,6 +25,9 @@ public final class ProblemSearchMainTest {
         }
         return bytes.toString(StandardCharsets.UTF_8);
     }
+    private static int rows(String text) {
+        return text.split(Pattern.quote(EOL)).length;
+    }
     private static void refused(String... args) throws Exception {
         try { output(args); }
         catch (IllegalArgumentException expected) { checks++; return; }
@@ -30,14 +36,13 @@ public final class ProblemSearchMainTest {
 
     public static void main(String[] args) throws Exception {
         String prefix = output("--source=hackerrank", "--category=search", "prefix");
-        check(prefix.startsWith("source\tid\tcategory\tscore\turl\ttitle\n"), "fixed header");
+        check(prefix.startsWith("source\tid\tcategory\tscore\turl\ttitle" + EOL), "fixed header");
         check(prefix.contains("hackerrank\tcontacts\tsearch\t"), "filtered seed");
         check(!prefix.contains("leetcode\t"), "source isolation");
         check(prefix.equals(output("--source=hackerrank", "--category=search", "prefix")),
                 "stable replay");
-        check(output("--category=graph").split("\n").length == 4, "filter-only browse");
-        check(output("--source=leetcode", "--limit=1", "search").split("\n").length == 2,
-                "explicit limit");
+        check(rows(output("--category=graph")) == 4, "filter-only browse");
+        check(rows(output("--source=leetcode", "--limit=1", "search")) == 2, "explicit limit");
         Path file = Path.of("target", "problem-search-cli-fixture.tsv").toAbsolutePath();
         Files.createDirectories(file.getParent());
         Files.writeString(file, "source\tid\tcategory\ttitle\ttags\turl\n"
