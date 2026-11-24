@@ -25,16 +25,17 @@ Do not merge while failing tests or without source/history/rights review.
 Hosted native Chromium 156.0.8078.4 / Playwright 1.64.0
 [run #45110400921](https://github.com/hsoliwal/ChromeAIAgent/actions/runs/45110400921)
 reported **4/5 tests passed**. The failing case received `AbortError`
-in the calling realm but read the owning callback's abort flag before
-the browser had dispatched that separate abort event. The failure was
-`ownerAborted: false`, not an unexpected successful invocation.
+in the calling realm and observed `ownerAborted: false` after one event-loop
+turn. The log does not establish whether the owner's abort event arrived
+later. Asynchronous delivery is a timing-race hypothesis to be tested,
+not a passing outcome.
 
 The revised test keeps both requirements: reject the caller with
 `AbortError` and deliver an abort to the owning callback. It now waits
 for the callback's actual signal event with a strict 2-second bound
 rather than sampling the flag after a single event-loop turn.
-**Timeout or missing propagation still fails.** This is a test timing
-correction, not weakened permission or cancellation behavior.
+**Timeout or missing propagation still fails.** Waiting for the observable
+owner event preserves both cancellation requirements.
 
 No production adapter or extension manifest is changed; the updated
 case requires an independently completed hosted CI rerun before
