@@ -35,14 +35,19 @@ public final class PostingBenchmarkMain {
         for (Fixture fixture : fixtures) {
             int[] javaResult = PostingIntersection.intersect(fixture.left(), fixture.right());
             if (javaResult.length != fixture.expected()) throw new IllegalStateException("invalid Java fixture");
+            for (int i = 0; i < javaResult.length; i++) {
+                if (javaResult[i] != 2 * (fixture.size() - fixture.expected() + i)) {
+                    throw new IllegalStateException("incorrect Java fixture document ID");
+                }
+            }
             if (withNative && !Arrays.equals(javaResult,
                     NativePostingIntersection.intersect(fixture.left(), fixture.right()))) {
                 throw new IllegalStateException("JNI mismatched Java oracle");
             }
             // The deterministic array fixture is shared between both backends, never altered.
             for (int i = 0; i < options.warmup(); i++) {
-                consume(PostingIntersection.intersect(fixture.left(), fixture.right()));
-                if (withNative) consume(NativePostingIntersection.intersect(fixture.left(), fixture.right()));
+                sink = consume(PostingIntersection.intersect(fixture.left(), fixture.right()));
+                if (withNative) sink = consume(NativePostingIntersection.intersect(fixture.left(), fixture.right()));
             }
             long[] javaSample = new long[options.samples()];
             long[] nativeSample = withNative ? new long[options.samples()] : null;
