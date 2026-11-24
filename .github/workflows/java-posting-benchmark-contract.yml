@@ -1,0 +1,28 @@
+name: Java posting benchmark contract
+on:
+  pull_request:
+    paths:
+      - 'java-agent/src/main/java/io/synexia/chromeagent/PostingBenchmarkMain.java'
+      - 'java-agent/src/test/java/io/synexia/chromeagent/PostingBenchmarkContractTest.java'
+      - 'java-agent/scripts/verify-posting-benchmark.sh'
+      - '.github/workflows/java-posting-benchmark-contract.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bounded-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Strict Java and JNI contract qualification, including new benchmark refusals
+        run: sh java-agent/scripts/verify-posting-benchmark.sh
+      - name: Assemble JAR and inspect JVM module dependencies
+        run: |
+          jar --create --file java-agent/target/chromeaiagent-agent.jar -C java-agent/target/classes .
+          test "$(jdeps --print-module-deps java-agent/target/chromeaiagent-agent.jar | tr -d '\r')" = java.base
