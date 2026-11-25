@@ -1,7 +1,6 @@
 package io.synexia.chromeagent;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Comparator;
@@ -100,12 +99,67 @@ public final class ProblemSearchIndex {
                     ? PostingIntersection.intersect(matches, lists.get(i))
                     : NativePostingIntersection.intersect(matches, lists.get(i));
         }
-        List<Hit> hits = new ArrayList<>(matches.length);
-        for (int doc : matches) hits.add(new Hit(records.get(doc), score(fields.get(doc), terms)));
-        hits.sort(Comparator.comparingInt(Hit::score).reversed()
-                .thenComparing(h -> h.reference().source())
-                .thenComparing(h -> h.reference().id()));
-        return List.copyOf(hits.subList(0, Math.min(limit, hits.size())));
+        return topHits(matches, terms, limit);
+    }
+
+    /**
+     * Keeps only the best requested matches in a worst-first primitive heap.
+     * Canonical document IDs already encode the source/id tie order. Ranking
+     * uses O(matches log(limit + 1)) work and O(limit) auxiliary storage; Hit objects
+     * are created only for the immutable returned result.
+     */
+    private List<Hit> topHits(int[] matches, List<String> terms, int limit) {
+        int capacity = Math.min(limit, matches.length);
+        if (capacity == 0) return List.of();
+        int[] documents = new int[capacity];
+        int[] scores = new int[capacity];
+        int size = 0;
+        for (int doc : matches) {
+            int value = score(fields.get(doc), terms);
+            if (size < capacity) {
+                int position = size++;
+                while (position > 0) {
+                    int parent = (position - 1) >>> 1;
+                    if (!worse(value, doc, scores[parent], documents[parent])) break;
+                    documents[position] = documents[parent];
+                    scores[position] = scores[parent];
+                    position = parent;
+                }
+                documents[position] = doc;
+                scores[position] = value;
+            } else if (worse(scores[0], documents[0], value, doc)) {
+                replaceWorst(documents, scores, size, doc, value);
+            }
+        }
+        Hit[] result = new Hit[size];
+        while (size > 0) {
+            result[--size] = new Hit(records.get(documents[0]), scores[0]);
+            if (size > 0) {
+                replaceWorst(documents, scores, size, documents[size], scores[size]);
+            }
+        }
+        return List.of(result);
+    }
+
+    /** A lower score loses; among equal scores the later canonical ID loses. */
+    private static boolean worse(int score, int document, int otherScore, int otherDocument) {
+        return score < otherScore || (score == otherScore && document > otherDocument);
+    }
+
+    /** Restores the worst-first heap after replacing or removing its root. */
+    private static void replaceWorst(int[] documents, int[] scores, int size, int doc, int score) {
+        int position = 0;
+        while (position < size / 2) {
+            int child = position * 2 + 1;
+            if (child + 1 < size && worse(scores[child + 1], documents[child + 1],
+                    scores[child], documents[child])) child++;
+            if (!worse(scores[child], documents[child], score, doc)) break;
+            documents[position] = documents[child];
+            scores[position] = scores[child];
+            position = child;
+        }
+        documents[position] = doc;
+        scores[position] = score;
     }
 
     private int[] resolve(String term) {

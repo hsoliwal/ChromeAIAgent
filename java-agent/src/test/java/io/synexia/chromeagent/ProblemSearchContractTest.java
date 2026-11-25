@@ -108,6 +108,7 @@ public final class ProblemSearchContractTest {
         ProblemSearchIndex overflow = new ProblemSearchIndex(broadVocabulary);
         refused(() -> overflow.search("pr*", null, null, 100), "silent prefix truncation");
         yes(overflow.search("pr000", null, null, 100).size() == 1, "specific exact token");
+        checks += ProblemSearchRankingContractTest.verify();
         System.out.println("ProblemSearchContractTest PASS checks=" + checks);
     }
 }

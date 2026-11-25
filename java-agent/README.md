@@ -9,3 +9,15 @@ Independent opt-in Java/JNI module. The Chrome extension remains unchanged. Cons
 - The native library is built under `java-agent/target/native` and never copied into the extension or installed system-wide.
 
 This module is a qualification slice and does not replace or extract Chrome's built-in model.
+
+## Ranking contract regression
+
+The category search suite runs an independent full-scan/full-sort oracle against
+Java and JNI query paths, including every result limit from 1 through 100,
+source/category filters, prefix terms, shuffled inputs, and ties at the 4096-record
+capacity. Ranking retains only the requested number of IDs and scores in primitive
+arrays while preserving the existing result order.
+
+The new `ProblemSearchRankingContractTest.java` is independently authored under
+Apache-2.0; see `LICENSE-APACHE-2.0.txt`. Existing source and upstream notices retain
+their original licenses.
