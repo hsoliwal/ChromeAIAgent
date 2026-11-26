@@ -1,5 +1,7 @@
 package io.synexia.chromeagent;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
@@ -45,6 +47,7 @@ public final class PostingParityContractTest {
         }
         same(full, even);
         same(full, full);
+        same(new int[] {0, Integer.MAX_VALUE}, new int[] {Integer.MAX_VALUE});
         refused(() -> PostingIntersection.intersect(new int[] {-1}, new int[0]), "negative Java ID");
         refused(() -> NativePostingIntersection.intersect(new int[] {-1}, new int[0]), "negative JNI ID");
         refused(() -> PostingIntersection.intersect(new int[] {1, 1}, new int[0]), "duplicate Java ID");
@@ -63,7 +66,38 @@ public final class PostingParityContractTest {
                 checks++;
             }
         }
+        nativeBoundaryContracts();
+        checks += ProblemSearchRankingContractTest.verify(ProblemSearchIndex.Backend.JNI);
         System.out.println("PostingParityContractTest PASS checks=" + checks);
+    }
+
+    private static void nativeBoundaryContracts() throws ReflectiveOperationException {
+        Method method = NativePostingIntersection.class.getDeclaredMethod("intersectNative", int[].class, int[].class);
+        method.setAccessible(true);
+        boundaryRefused(method, NullPointerException.class, null, new int[0]);
+        boundaryRefused(method, NullPointerException.class, new int[0], null);
+        int[] oversized = new int[4097];
+        Arrays.setAll(oversized, value -> value);
+        for (int[] values : new int[][] {new int[] {-1}, new int[] {Integer.MIN_VALUE},
+                new int[] {1, 1}, new int[] {5, 3}, oversized}) {
+            // Even an empty counterpart cannot bypass full validation of a native snapshot.
+            boundaryRefused(method, IllegalArgumentException.class, values, new int[0]);
+            boundaryRefused(method, IllegalArgumentException.class, new int[0], values);
+        }
+    }
+
+    private static void boundaryRefused(Method method, Class<? extends Throwable> expected,
+                                        int[] left, int[] right) throws ReflectiveOperationException {
+        try {
+            method.invoke(null, left, right);
+        } catch (InvocationTargetException wrapped) {
+            if (!expected.isInstance(wrapped.getCause())) {
+                throw new AssertionError("unexpected native boundary failure", wrapped.getCause());
+            }
+            checks++;
+            return;
+        }
+        throw new AssertionError("native boundary accepted malformed posting input");
     }
 
     private static int[] maskToArray(int mask) {

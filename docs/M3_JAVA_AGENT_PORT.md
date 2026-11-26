@@ -5,7 +5,7 @@ Status: review-only additive slice. Donor baseline: `guberm/ChromeAIAgent`, fork
 ## Ownership and boundaries
 
 - This repository owns **agent admission and deterministic action ordering** only. It does not own model weights, inference internals, Maven lifecycle mutation, source transformation, or arbitrary host process execution.
-- `hsoliwal/ChromeLLM` owns Java/JNI inference and the optional installed-Chrome provider (draft PR #54); `hsoliwal/maven` owns Maven smart-build plans and verified artifact provisioning (draft PR #38). Integration may occur later through explicit, versioned adapters with contract tests.
+- `hsoliwal/ChromeLLM` owns standalone Java/JNI inference and its selected native or CLI providers; the former installed-Chrome and chat-bridge providers were removed in PRs #84 and #85. `hsoliwal/maven` owns Maven smart-build plans and verified artifact provisioning. Agent admission does not create another inference provider or authorize Maven lifecycle changes.
 - Chrome's built-in model remains browser-managed. Do not extract, download, or redistribute Chrome-managed model assets. No assumption that `guberm/ChromeAIAgent` supplies such assets.
 - The original extension's user interface, `chrome.*` permissions, `Intent`, `AgentPlanStore`, and browser automation behavior remain unchanged.
 - Java defaults to an ASCII, browser-free lexical helper. Optional native JNI acceleration uses **the same bounded exact-match contract**, not a different intent model or implicit fallback. It is experimental, not a performance claim.
@@ -19,6 +19,14 @@ Status: review-only additive slice. Donor baseline: `guberm/ChromeAIAgent`, fork
 `PlanExecutor.run(...)` first validates the entire plan and rejects unknown/unregistered operations **before any tool callback**. A tool is explicitly registered by the caller; no shell, network, browser, filesystem, or model provider is registered by default. It executes serially and stops on failure. Each successful output has a SHA-256 digest; results are immutable. No replay cache or cross-run exactly-once promise exists.
 
 `AsciiKeywordMatcher` accepts printable ASCII plus TAB/LF/CR text and lowercase ASCII phrases. Matching is ASCII case-insensitive and enforces ASCII word boundaries `[A-Za-z0-9_]`. Candidates are checked in supplied priority order; within a candidate, the leftmost exact bounded occurrence wins. Strings above declared sizes, inputs whose `text length × candidate count` exceeds 8,388,608, or Unicode input are refused, not silently coerced. Complexity is bounded O(candidate count × text length × maximum phrase length), and no speedup is claimed before benchmarking. Java is the default. `NativeKeywordMatcher` must be enabled with an explicit library path and must reject unavailable JNI rather than silently switching provider.
+
+The JNI matcher preserves the initial Java admission check, then validates and
+uses one copied candidate array for both native input and result-index bounds.
+The native entry checks the complete copied text/phrase domain before matching.
+Invalid later phrases cannot be hidden behind an earlier successful match;
+allocation failure is reported as Java `OutOfMemoryError`. Caller collections
+must still follow their own concurrent-access contracts: these checks do not
+make a concurrently modified collection an atomic snapshot.
 
 ## Algorithm donor catalogue and acceptance
 

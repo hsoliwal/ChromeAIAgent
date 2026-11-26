@@ -3,6 +3,7 @@ package io.synexia.chromeagent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -19,9 +20,13 @@ public final class NativeKeywordMatcher {
     }
 
     public static int firstIndex(String text, List<String> candidates) {
+        // Retain admission before allocating an array, including the existing exception order.
         AsciiKeywordMatcher.validate(text, candidates);
-        int result = firstIndexNative(text, candidates.toArray(String[]::new));
-        if (result < -1 || result >= candidates.size()) {
+        // Validate and bound the same snapshot that crosses JNI, not a mutable caller view.
+        String[] snapshot = candidates.toArray(String[]::new);
+        AsciiKeywordMatcher.validate(text, Arrays.asList(snapshot));
+        int result = firstIndexNative(text, snapshot);
+        if (result < -1 || result >= snapshot.length) {
             throw new IllegalStateException("invalid native matcher result");
         }
         return result;
