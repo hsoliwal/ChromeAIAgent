@@ -109,6 +109,7 @@ public final class ProblemSearchContractTest {
         refused(() -> overflow.search("pr*", null, null, 100), "silent prefix truncation");
         yes(overflow.search("pr000", null, null, 100).size() == 1, "specific exact token");
         checks += ProblemSearchRankingContractTest.verify();
+        checks += ProblemSearchSnapshotContractTest.verify();
         System.out.println("ProblemSearchContractTest PASS checks=" + checks);
     }
 }
