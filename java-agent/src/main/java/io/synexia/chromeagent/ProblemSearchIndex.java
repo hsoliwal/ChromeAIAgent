@@ -39,6 +39,7 @@ public final class ProblemSearchIndex {
         this.backend = Objects.requireNonNull(backend, "backend");
         if (input.size() > 4096) throw new IllegalArgumentException("catalogue capacity exceeded");
         List<ProblemReference> sorted = new ArrayList<>(input);
+        if (sorted.size() > 4096) throw new IllegalArgumentException("catalogue capacity exceeded");
         sorted.sort(Comparator.comparing(ProblemReference::source).thenComparing(ProblemReference::id));
         Set<String> keys = new HashSet<>();
         List<Fields> tempFields = new ArrayList<>(sorted.size());
